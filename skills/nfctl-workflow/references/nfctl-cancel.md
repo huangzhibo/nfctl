@@ -3,8 +3,8 @@
 取消运行中的工作流。发送 cancel signal 给 Temporal workflow。
 
 ```bash
-nfctl cancel <workflow_id> --format json --quiet
-nfctl cancel <workflow_id> --reason "内存不足需调整参数" --format json --quiet
+nfctl -f json -q cancel <workflow_id>
+nfctl -f json -q cancel <workflow_id> --reason "内存不足需调整参数"
 ```
 
 ## 参数

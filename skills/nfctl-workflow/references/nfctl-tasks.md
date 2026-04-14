@@ -3,9 +3,10 @@
 子任务列表，支持状态过滤和 process 过滤。
 
 ```bash
-nfctl tasks <workflow_id> --format json
-nfctl tasks <workflow_id> --status failed --format json
-nfctl tasks <workflow_id> --process BWA_MEM --format json
+nfctl -f json tasks <workflow_id>
+nfctl -f json tasks <workflow_id> --status failed
+nfctl -f json tasks <workflow_id> --process BWA_MEM
+nfctl -f json tasks <workflow_id> --sort duration --sort-order desc
 ```
 
 ## 参数
@@ -16,6 +17,8 @@ nfctl tasks <workflow_id> --process BWA_MEM --format json
 | `--process` | Process 名称过滤 |
 | `-n` | 每页条数（默认 50） |
 | `--page` | 页码 |
+| `--sort` | 排序字段（默认 task_id） |
+| `--sort-order` | 排序方向 asc/desc（默认 asc） |
 
 ## 响应
 

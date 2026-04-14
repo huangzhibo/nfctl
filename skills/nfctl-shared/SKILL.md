@@ -10,7 +10,7 @@ metadata:
 
 # nfctl 共享规则
 
-本技能指导你如何通过 nfctl 操作 Nextflow Monitor Agent。
+本技能指导你如何通过 nfctl 操作 nf-server。
 
 ## 配置
 
@@ -20,7 +20,7 @@ nfctl 连接本地 HPC 上的 Agent 服务，无需认证。
 # 查看当前配置
 nfctl config show
 
-# 设置 Agent URL（默认 http://localhost:8000）
+# 设置服务地址（默认 http://localhost:8000）
 nfctl config set url http://10.0.1.100:8000
 
 # 也可通过环境变量（优先级高于配置文件）
@@ -36,6 +36,11 @@ export NFCTL_URL=http://10.0.1.100:8000
 | `--quiet` / `-q` | 跳过确认提示（`--format json` 自动隐含） |
 | `--verbose` / `-v` | 调试日志 |
 | `--no-color` | 禁用颜色 |
+
+`--jq <expr>` 为全局选项，隐含 `--format json`，通过 jq 过滤输出：
+```bash
+nfctl --jq '.data.items[].workflow_id' list
+```
 
 **AI Agent 规则**：所有命令必须加 `--format json`，输出为标准信封格式。
 
@@ -59,9 +64,9 @@ export NFCTL_URL=http://10.0.1.100:8000
 | 1 | 一般错误 | 读取 error.message |
 | 2 | 参数/验证错误 | 检查命令参数 |
 | 3 | 认证失败（保留） | - |
-| 4 | 网络/连接错误 | 检查 Agent 是否运行，确认 NFCTL_URL |
+| 4 | 网络/连接错误 | 检查服务是否运行，确认 NFCTL_URL |
 | 5 | 冲突（流程正在运行） | 先取消再重试 |
-| 6 | 服务端错误 | 检查 Agent 日志 |
+| 6 | 服务端错误 | 检查服务日志 |
 
 ## 错误处理
 
@@ -75,8 +80,8 @@ export NFCTL_URL=http://10.0.1.100:8000
 
 | type | 处理 |
 |------|------|
-| `NETWORK_ERROR` | 检查 Agent 连接 |
+| `NETWORK_ERROR` | 检查服务连接 |
 | `NOT_FOUND` | workflow 不存在，用 `nfctl list` 确认 |
 | `CONFLICT` | 流程已在运行，需先 cancel |
 | `VALIDATION_ERROR` | 参数错误，检查输入 |
-| `SERVER_ERROR` | Agent 内部错误，查看 Agent 日志 |
+| `SERVER_ERROR` | 服务端内部错误，查看服务日志 |

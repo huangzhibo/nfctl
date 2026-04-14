@@ -3,7 +3,7 @@
 工作流详情：状态、进度、元数据、错误信息。
 
 ```bash
-nfctl status <workflow_id> --format json
+nfctl -f json status <workflow_id>
 ```
 
 ## 响应

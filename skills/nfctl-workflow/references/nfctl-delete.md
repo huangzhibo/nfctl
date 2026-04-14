@@ -3,7 +3,7 @@
 删除工作流记录 + 分析目录。仅允许终态（succeeded/failed/cancelled）。
 
 ```bash
-nfctl delete <workflow_id> --format json --quiet
+nfctl -f json -q delete <workflow_id>
 ```
 
 ## 参数

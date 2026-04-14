@@ -37,9 +37,9 @@ Pipeline (并发控制)
 | `list` | 工作流列表 | [`references/nfctl-list.md`](references/nfctl-list.md) |
 | `status` | 工作流详情 | [`references/nfctl-status.md`](references/nfctl-status.md) |
 | `tasks` | 子任务列表 | [`references/nfctl-tasks.md`](references/nfctl-tasks.md) |
+| `task` | 子任务详情 | [`references/nfctl-task.md`](references/nfctl-task.md) |
 | `log` | 日志查看 | [`references/nfctl-log.md`](references/nfctl-log.md) |
 | `resources` | 资源统计 | [`references/nfctl-resources.md`](references/nfctl-resources.md) |
-| `validate` | 投递前验证 | [`references/nfctl-validate.md`](references/nfctl-validate.md) |
 | `submit` | 投递工作流 | [`references/nfctl-submit.md`](references/nfctl-submit.md) |
 | `cancel` | 取消工作流 | [`references/nfctl-cancel.md`](references/nfctl-cancel.md) |
 | `delete` | 删除工作流 | [`references/nfctl-delete.md`](references/nfctl-delete.md) |
@@ -50,16 +50,16 @@ Pipeline (并发控制)
 ### 投递并监控
 
 ```bash
-# 1. 验证
-nfctl validate --pipeline WGS --launch-dir /data/project/sample1 --format json
+# 1. 验证（dry-run）
+nfctl -f json submit /data/project/sample1 --pipeline WGS --dry-run
 
 # 2. 投递
-nfctl submit /data/project/sample1 --pipeline WGS --env prod --format json --quiet
+nfctl -f json -q submit /data/project/sample1 --pipeline WGS --env prod
 
 # 3. 获取 workflow_id（从 submit 响应 data.workflow_id 提取）
 
 # 4. 轮询状态
-nfctl status <workflow_id> --format json
+nfctl -f json status <workflow_id>
 # data.status: running → 继续等待, succeeded → 完成, failed → 诊断
 ```
 
@@ -67,18 +67,21 @@ nfctl status <workflow_id> --format json
 
 ```bash
 # 1. 查看状态和错误信息
-nfctl status <workflow_id> --format json
+nfctl -f json status <workflow_id>
 # 关注: data.status, data.error_message, data.error_report
 
 # 2. 找到失败的 task
-nfctl tasks <workflow_id> --status failed --format json
+nfctl -f json tasks <workflow_id> --status failed
 # 关注: exit_status, peak_rss, duration
 
+# 2.5 查看单个 task 详情（script, workdir, 完整资源占用）
+nfctl -f json task <workflow_id> <task_id>
+
 # 3. 查看错误日志
-nfctl log <workflow_id> --grep "ERROR" --format json
+nfctl -f json log <workflow_id> --grep "ERROR"
 
 # 4. 资源分析（判断 OOM）
-nfctl resources <workflow_id> --exclude-cached --format json
+nfctl -f json resources <workflow_id> --exclude-cached
 # 关注: cpu_efficiency, memory_efficiency
 ```
 

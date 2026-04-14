@@ -3,9 +3,10 @@
 工作流列表，支持状态过滤、Pipeline 过滤、关键词搜索、分页排序。
 
 ```bash
-nfctl list --format json
-nfctl list --status running,failed --pipeline WGS -n 10 --format json
-nfctl list --query sample123 --format json
+nfctl -f json list
+nfctl -f json list --status running,failed --pipeline WGS -n 10
+nfctl -f json list --query sample123
+nfctl -f json list --all                    # 自动遍历所有分页
 ```
 
 ## 参数
@@ -18,7 +19,9 @@ nfctl list --query sample123 --format json
 | `--query` / `-q` | 搜索 workflow_id 或 launch_dir |
 | `-n` | 每页条数（默认 20） |
 | `--page` | 页码（默认 1） |
+| `--all` | 自动遍历所有分页 |
 | `--sort` | 排序字段（默认 created_at） |
+| `--sort-order` | 排序方向 asc/desc（默认 desc） |
 
 ## 响应
 

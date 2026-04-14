@@ -3,9 +3,9 @@
 查看 Nextflow 日志，支持 tail 和 grep。
 
 ```bash
-nfctl log <workflow_id> --format json
-nfctl log <workflow_id> --grep ERROR --format json
-nfctl log <workflow_id> --tail 50 --grep "OOM\|memory" --format json
+nfctl -f json log <workflow_id>
+nfctl -f json log <workflow_id> --grep ERROR
+nfctl -f json log <workflow_id> --tail 50 --grep "OOM\|memory"
 ```
 
 ## 参数

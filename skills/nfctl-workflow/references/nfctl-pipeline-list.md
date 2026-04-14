@@ -3,7 +3,7 @@
 列出所有 Pipeline 配置（名称、并发限制、启用状态）。
 
 ```bash
-nfctl pipeline list --format json
+nfctl -f json pipeline list
 ```
 
 ## 响应

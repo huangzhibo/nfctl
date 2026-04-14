@@ -3,7 +3,7 @@
 系统概览：运行/待机/成功/失败统计 + Pipeline 分布 + 队列状态。
 
 ```bash
-nfctl overview --format json
+nfctl -f json overview
 ```
 
 ## 响应

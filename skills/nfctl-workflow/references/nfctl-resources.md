@@ -3,8 +3,8 @@
 资源使用统计：CPU/内存效率、IO、时间。
 
 ```bash
-nfctl resources <workflow_id> --format json
-nfctl resources <workflow_id> --exclude-cached --format json
+nfctl -f json resources <workflow_id>
+nfctl -f json resources <workflow_id> --exclude-cached
 ```
 
 ## 参数

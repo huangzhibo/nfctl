@@ -16,24 +16,24 @@ metadata:
 
 ```bash
 # 1. 检查 pipeline 容量
-nfctl pipeline list --format json
-nfctl overview --format json
+nfctl -f json pipeline list
+nfctl -f json overview
 
-# 2. 逐个验证
-nfctl validate --pipeline WGS --launch-dir /data/project/sample1 --format json
-nfctl validate --pipeline WGS --launch-dir /data/project/sample2 --format json
+# 2. 逐个验证（dry-run）
+nfctl -f json submit /data/project/sample1 --pipeline WGS --dry-run
+nfctl -f json submit /data/project/sample2 --pipeline WGS --dry-run
 # ... 全部通过后再投递
 
 # 3. 逐个投递（注意并发限制）
-nfctl submit /data/project/sample1 --pipeline WGS --env prod --format json --quiet
-nfctl submit /data/project/sample2 --pipeline WGS --env prod --format json --quiet
+nfctl -f json -q submit /data/project/sample1 --pipeline WGS --env prod
+nfctl -f json -q submit /data/project/sample2 --pipeline WGS --env prod
 
 # 4. 监控
-nfctl list --pipeline WGS --status running --format json
+nfctl -f json list --pipeline WGS --status running
 
 # 5. 查看结果
-nfctl list --pipeline WGS --status failed --format json
-nfctl list --pipeline WGS --status succeeded --format json
+nfctl -f json list --pipeline WGS --status failed
+nfctl -f json list --pipeline WGS --status succeeded
 ```
 
 ## 注意事项
