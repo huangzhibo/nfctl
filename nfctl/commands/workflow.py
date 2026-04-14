@@ -1,12 +1,12 @@
 """
-管理命令：submit / validate / cancel / delete
+管理命令：submit / cancel / delete / resume
 """
 
 import sys
 
 import typer
 
-from nfctl.client import AgentClient
+from nfctl.client import EXIT_VALIDATION, AgentClient, _error
 from nfctl.output import console, is_json, print_kv, print_result
 
 
@@ -24,15 +24,10 @@ def _confirm(message: str) -> None:
         raise typer.Abort()
 
 
-def submit(
-    launch_dir: str = typer.Argument(help="分析目录路径"),
-    pipeline: str = typer.Option(..., "--pipeline", "-p", help="Pipeline 名称"),
-    env: str | None = typer.Option(None, "--env", "-e", help="环境 (test/gray/prod)"),
-) -> None:
-    """投递工作流"""
-    client = AgentClient()
-
-    # 先 validate（包含 run.sh 解析）
+def _do_validate(
+    client: AgentClient, pipeline: str, launch_dir: str
+) -> tuple[dict, str]:
+    """执行 validate 并返回 (val_data, workflow_id)，失败时直接退出"""
     val_envelope, val_code = client.post(
         "/workflow/validate", json={"pipeline_name": pipeline, "launch_dir": launch_dir}
     )
@@ -50,8 +45,6 @@ def submit(
             ),
             "验证失败",
         )
-        from nfctl.client import EXIT_VALIDATION, _error
-
         print_result(
             _error(EXIT_VALIDATION, "VALIDATION_ERROR", failed),
             EXIT_VALIDATION,
@@ -62,8 +55,6 @@ def submit(
     workflow_id = wf_id_detail.split("=", 1)[1] if "=" in wf_id_detail else ""
 
     if not workflow_id:
-        from nfctl.client import EXIT_VALIDATION, _error
-
         print_result(
             _error(
                 EXIT_VALIDATION,
@@ -73,6 +64,32 @@ def submit(
             ),
             EXIT_VALIDATION,
         )
+
+    return val_data, workflow_id
+
+
+def submit(
+    launch_dir: str = typer.Argument(help="分析目录路径"),
+    pipeline: str = typer.Option(..., "--pipeline", "-p", help="Pipeline 名称"),
+    env: str | None = typer.Option(None, "--env", "-e", help="环境 (test/gray/prod)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="仅验证，不实际投递"),
+) -> None:
+    """投递工作流"""
+    client = AgentClient()
+    val_data, workflow_id = _do_validate(client, pipeline, launch_dir)
+
+    if dry_run:
+        if is_json():
+            print_result({"ok": True, "data": val_data}, 0)
+        checks = val_data.get("checks", {})
+        items = [("can_submit", val_data.get("can_submit")), ("workflow_id", workflow_id)]
+        for name, check in checks.items():
+            passed = check.get("passed", False)
+            detail = check.get("detail", "")
+            symbol = "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
+            items.append((name, f"{symbol}  {detail}" if detail else symbol))
+        print_kv("验证结果 (dry-run)", items)
+        sys.exit(0)
 
     body: dict = {
         "workflow_id": workflow_id,
@@ -92,42 +109,6 @@ def submit(
         f"[green]Submitted:[/green] {d.get('workflow_id')} (pipeline: {d.get('pipeline_name')})"
     )
     sys.exit(code)
-
-
-def validate(
-    pipeline: str = typer.Option(..., "--pipeline", "-p", help="Pipeline 名称"),
-    launch_dir: str | None = typer.Option(
-        None, "--launch-dir", "-d", help="分析目录（完整验证）"
-    ),
-) -> None:
-    """投递前验证"""
-    client = AgentClient()
-    body: dict = {"pipeline_name": pipeline}
-    if launch_dir:
-        body["launch_dir"] = launch_dir
-
-    envelope, code = client.post("/workflow/validate", json=body)
-
-    if not envelope["ok"] or is_json():
-        print_result(envelope, code)
-
-    data = envelope["data"]
-    can_submit = data.get("can_submit", False)
-    checks = data.get("checks", {})
-
-    items = [("can_submit", can_submit)]
-    for name, check in checks.items():
-        passed = check.get("passed", False)
-        detail = check.get("detail", "")
-        symbol = "[green]PASS[/green]" if passed else "[red]FAIL[/red]"
-        items.append((name, f"{symbol}  {detail}" if detail else symbol))
-
-    print_kv("验证结果", items)
-
-    if not can_submit:
-        from nfctl.client import EXIT_VALIDATION
-
-        sys.exit(EXIT_VALIDATION)
 
 
 def resume(

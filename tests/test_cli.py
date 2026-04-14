@@ -131,6 +131,262 @@ class TestList:
         assert data["data"]["total"] == 1
 
 
+class TestStatus:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_shows_error_report(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "status": "failed",
+                "progress_percent": 80.0,
+                "pipeline_name": "WGS",
+                "env": "prod",
+                "launch_dir": "/data/wf-001",
+                "run_name": "run1",
+                "sge_job_id": "12345",
+                "error_message": "Process failed",
+                "error_report": "FATAL: process FASTQC failed\nexit code 137",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"])
+
+        assert result.exit_code == 0
+        assert "error_report" in result.output
+        assert "exit code 137" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "status": "running",
+                "progress_percent": 50.0,
+                "error_report": None,
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "status", "wf-001"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["workflow_id"] == "wf-001"
+
+
+class TestTaskDetail:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_task_detail_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "task_id": 1,
+                "workflow_id": "wf-001",
+                "process": "FASTQC",
+                "name": "FASTQC (sample1)",
+                "status": "COMPLETED",
+                "hash": "ab/cd1234",
+                "workdir": "/work/ab/cd1234",
+                "script": "fastqc input.fq",
+                "exit_status": 0,
+                "duration": 30000,
+                "realtime": 28000,
+                "peak_rss": 1073741824,
+                "cpus": 4,
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "task", "wf-001", "1"]
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["task_id"] == 1
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_task_detail_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "task_id": 1,
+                "workflow_id": "wf-001",
+                "process": "FASTQC",
+                "name": "FASTQC (sample1)",
+                "status": "COMPLETED",
+                "hash": "ab/cd1234",
+                "workdir": "/work/ab/cd1234",
+                "script": "fastqc input.fq",
+                "exit_status": 0,
+                "duration": 30000,
+                "realtime": 28000,
+                "peak_rss": 1073741824,
+                "cpus": 4,
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["task", "wf-001", "1"])
+
+        assert result.exit_code == 0
+        assert "FASTQC" in result.output
+        assert "ab/cd1234" in result.output
+        assert "/work/ab/cd1234" in result.output
+
+
+class TestTasksSort:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_tasks_with_sort(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "total": 1,
+                "page": 1,
+                "page_size": 50,
+                "tasks": [
+                    {
+                        "task_id": 1,
+                        "process": "FASTQC",
+                        "name": "FASTQC (s1)",
+                        "status": "COMPLETED",
+                        "duration": 5000,
+                        "peak_rss": 100000,
+                        "exit_status": 0,
+                    }
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "tasks", "wf-001", "--sort", "duration", "--sort-order", "desc"]
+        )
+
+        assert result.exit_code == 0
+        # 验证 sort 参数传递到了请求中
+        call_args = mock_client.request.call_args
+        params = call_args.kwargs.get("params", {})
+        assert params["sort_by"] == "duration"
+        assert params["sort_order"] == "desc"
+
+
+class TestListAll:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_all_pages(self, mock_client_class):
+        """--all 自动遍历多页"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+
+        page1 = _mock_response(200, {
+            "total": 3, "page": 1, "page_size": 2,
+            "items": [
+                {"workflow_id": "wf-001", "status": "running", "progress_percent": 50.0,
+                 "pipeline_name": "WGS", "env": "prod", "updated_at": "2026-04-13T10:00:00"},
+                {"workflow_id": "wf-002", "status": "succeeded", "progress_percent": 100.0,
+                 "pipeline_name": "WGS", "env": "prod", "updated_at": "2026-04-13T09:00:00"},
+            ],
+        })
+        page2 = _mock_response(200, {
+            "total": 3, "page": 2, "page_size": 2,
+            "items": [
+                {"workflow_id": "wf-003", "status": "failed", "progress_percent": 80.0,
+                 "pipeline_name": "WES", "env": "test", "updated_at": "2026-04-13T08:00:00"},
+            ],
+        })
+        mock_client.request.side_effect = [page1, page2]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "list", "--all", "-n", "2"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert len(data["data"]["items"]) == 3
+        assert mock_client.request.call_count == 2
+
+
+class TestSubmitDryRun:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_submit_dry_run_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(200, {
+            "can_submit": True,
+            "checks": {
+                "capacity": {"passed": True, "detail": "1/10"},
+                "workflow_id": {"passed": True, "detail": "TOWER_WORKFLOW_ID=wf-new"},
+                "run_sh": {"passed": True, "detail": "OK"},
+            },
+        })
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "submit", "--dry-run", "-p", "WGS", "/data/sample1"]
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["can_submit"] is True
+        # 只调用了 validate，没有调用 submit
+        assert mock_client.request.call_count == 1
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_submit_dry_run_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(200, {
+            "can_submit": True,
+            "checks": {
+                "capacity": {"passed": True, "detail": "1/10"},
+                "workflow_id": {"passed": True, "detail": "TOWER_WORKFLOW_ID=wf-new"},
+                "run_sh": {"passed": True, "detail": "OK"},
+            },
+        })
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["submit", "--dry-run", "-p", "WGS", "/data/sample1"]
+        )
+
+        assert result.exit_code == 0
+        assert "dry-run" in result.output
+        assert "PASS" in result.output
+
+
 class TestNetworkError:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")

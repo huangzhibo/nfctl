@@ -6,6 +6,8 @@ JSON 信封格式与 lims2 CLI 完全对齐。
 """
 
 import json
+import shutil
+import subprocess
 import sys
 from enum import StrEnum
 from typing import Any
@@ -26,11 +28,32 @@ class OutputFormat(StrEnum):
 
 # 全局状态（由 main.py callback 设置）
 _format: OutputFormat = OutputFormat.TABLE
+_jq_expr: str | None = None
 
 
 def set_format(fmt: OutputFormat) -> None:
     global _format
     _format = fmt
+
+
+def set_jq(expr: str | None) -> None:
+    global _jq_expr
+    _jq_expr = expr
+
+
+def apply_options(
+    fmt: OutputFormat = OutputFormat.TABLE, jq: str | None = None
+) -> None:
+    """全局 --format/--jq 处理"""
+    set_jq(None)
+    if jq:
+        if shutil.which("jq") is None:
+            err_console.print("[red]Error:[/red] jq 未安装，请先安装 jq")
+            sys.exit(1)
+        set_format(OutputFormat.JSON)
+        set_jq(jq)
+    else:
+        set_format(fmt)
 
 
 def get_format() -> OutputFormat:
@@ -41,10 +64,32 @@ def is_json() -> bool:
     return _format == OutputFormat.JSON
 
 
+def _output_json(obj: dict) -> None:
+    """输出 JSON，如果设置了 --jq 则过滤"""
+    raw = json.dumps(obj, ensure_ascii=False, default=str)
+    if _jq_expr:
+        try:
+            proc = subprocess.run(
+                ["jq", _jq_expr],
+                input=raw,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError:
+            err_console.print("[red]Error:[/red] jq 未安装，请先安装 jq")
+            sys.exit(1)
+        if proc.returncode != 0:
+            err_console.print(f"[red]jq error:[/red] {proc.stderr.strip()}")
+            sys.exit(1)
+        print(proc.stdout, end="")
+    else:
+        print(raw)
+
+
 def print_result(envelope: dict, exit_code: int) -> None:
     """统一输出：JSON 模式直接打印信封，人类模式由调用方渲染"""
     if is_json():
-        print(json.dumps(envelope, ensure_ascii=False, default=str))
+        _output_json(envelope)
     elif not envelope.get("ok"):
         err = envelope.get("error", {})
         err_console.print(f"[red]Error:[/red] {err.get('message', '未知错误')}")
@@ -56,7 +101,7 @@ def print_result(envelope: dict, exit_code: int) -> None:
 def print_data(data: Any, exit_code: int = 0) -> None:
     """输出成功数据（JSON 模式包装信封，人类模式由调用方已渲染）"""
     if is_json():
-        print(json.dumps({"ok": True, "data": data}, ensure_ascii=False, default=str))
+        _output_json({"ok": True, "data": data})
         sys.exit(exit_code)
 
 

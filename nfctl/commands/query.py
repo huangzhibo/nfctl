@@ -5,7 +5,7 @@
 import typer
 
 from nfctl.client import AgentClient
-from nfctl.output import is_json, print_kv, print_result, print_table
+from nfctl.output import err_console, is_json, print_kv, print_result, print_table
 
 
 def overview() -> None:
@@ -61,21 +61,50 @@ def list_workflows(
     ),
     n: int = typer.Option(20, "-n", help="每页条数"),
     page: int = typer.Option(1, "--page", help="页码"),
+    all_pages: bool = typer.Option(False, "--all", help="自动遍历所有分页"),
     sort_by: str = typer.Option("created_at", "--sort", help="排序字段"),
+    sort_order: str = typer.Option("desc", "--sort-order", help="排序方向 (asc/desc)"),
 ) -> None:
     """工作流列表"""
     client = AgentClient()
-    envelope, code = client.get(
-        "/workflow/list",
-        status=status,
-        pipeline_name=pipeline_name,
-        env=env,
-        q=q,
-        page_size=n,
-        page=page,
-        sort_by=sort_by,
-        sort_order="desc",
-    )
+    params = {
+        "status": status,
+        "pipeline_name": pipeline_name,
+        "env": env,
+        "q": q,
+        "page_size": n,
+        "sort_by": sort_by,
+        "sort_order": sort_order,
+    }
+
+    if all_pages:
+        all_items: list[dict] = []
+        current_page = 1
+        total = None
+        while current_page <= 50:
+            envelope, code = client.get(
+                "/workflow/list", page=current_page, **params
+            )
+            if not envelope["ok"]:
+                print_result(envelope, code)
+            data = envelope["data"]
+            page_items = data.get("items", [])
+            if not page_items:
+                break
+            all_items.extend(page_items)
+            total = data.get("total", 0)
+            if not is_json():
+                err_console.print(f"[dim][pagination] 第 {current_page} 页，已获取 {len(all_items)} / {total} 条[/dim]")
+            if len(all_items) >= total:
+                break
+            current_page += 1
+        envelope = {
+            "ok": True,
+            "data": {"items": all_items, "total": total, "page": 1, "page_size": total},
+        }
+        code = 0
+    else:
+        envelope, code = client.get("/workflow/list", page=page, **params)
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
@@ -125,6 +154,8 @@ def status(
     ]
     if d.get("error_message"):
         items.append(("error", d["error_message"]))
+    if d.get("error_report"):
+        items.append(("error_report", d["error_report"]))
     if d.get("duration"):
         items.append(("duration", f"{d['duration'] / 1000:.0f}s"))
     if d.get("start_time"):
@@ -141,6 +172,8 @@ def tasks(
     process: str | None = typer.Option(None, "--process", help="Process 过滤"),
     n: int = typer.Option(50, "-n", help="每页条数"),
     page: int = typer.Option(1, "--page", help="页码"),
+    sort_by: str = typer.Option("task_id", "--sort", help="排序字段"),
+    sort_order: str = typer.Option("asc", "--sort-order", help="排序方向 (asc/desc)"),
 ) -> None:
     """子任务列表"""
     client = AgentClient()
@@ -150,6 +183,8 @@ def tasks(
         process=process,
         page_size=n,
         page=page,
+        sort_by=sort_by,
+        sort_order=sort_order,
     )
 
     if not envelope["ok"] or is_json():
@@ -227,12 +262,52 @@ def resources(
     )
 
 
+def task_detail(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+    task_id: int = typer.Argument(help="Task ID"),
+) -> None:
+    """子任务详情"""
+    client = AgentClient()
+    envelope, code = client.get(f"/workflow/{workflow_id}/tasks/{task_id}")
+
+    if not envelope["ok"] or is_json():
+        print_result(envelope, code)
+
+    d = envelope["data"]
+    items = [
+        ("task_id", d.get("task_id")),
+        ("workflow_id", d.get("workflow_id")),
+        ("process", d.get("process")),
+        ("name", d.get("name")),
+        ("status", d.get("status")),
+        ("exit_status", d.get("exit_status")),
+        ("hash", d.get("hash")),
+        ("workdir", d.get("workdir")),
+        ("container", d.get("container")),
+        ("cpus", d.get("cpus")),
+        ("memory", _fmt_bytes(d["memory"]) if d.get("memory") else None),
+        ("duration", f"{d['duration'] / 1000:.1f}s" if d.get("duration") else None),
+        ("realtime", f"{d['realtime'] / 1000:.1f}s" if d.get("realtime") else None),
+        ("peak_rss", _fmt_bytes(d["peak_rss"]) if d.get("peak_rss") else None),
+        ("peak_vmem", _fmt_bytes(d["peak_vmem"]) if d.get("peak_vmem") else None),
+        ("pcpu", f"{d['pcpu']:.1f}%" if d.get("pcpu") is not None else None),
+        ("queue", d.get("queue")),
+    ]
+    if d.get("script"):
+        items.append(("script", d["script"].strip()))
+    if d.get("error_action"):
+        items.append(("error_action", d["error_action"]))
+
+    print_kv(f"Task {task_id} ({workflow_id})", items)
+
+
 def _fmt_bytes(n: int) -> str:
     """格式化字节数"""
     if n == 0:
         return "0"
+    value = float(n)
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if abs(n) < 1024:
-            return f"{n:.1f} {unit}"
-        n /= 1024  # type: ignore[assignment]
-    return f"{n:.1f} PB"
+        if abs(value) < 1024:
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{value:.1f} PB"

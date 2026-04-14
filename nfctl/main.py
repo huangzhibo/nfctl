@@ -1,5 +1,5 @@
 """
-nfctl -- Nextflow Monitor Agent CLI
+nfctl -- nf-server CLI
 
 面向生信工程师和 AI Agent 的命令行工具。
 输出契约（JSON 信封、退出码）与 lims2 CLI 对齐。
@@ -7,13 +7,14 @@ nfctl -- Nextflow Monitor Agent CLI
 
 import typer
 
-from nfctl.output import OutputFormat, set_format
+from nfctl.output import OutputFormat, apply_options
 
 app = typer.Typer(
     name="nfctl",
-    help="Nextflow Monitor Agent CLI",
+    help="nf-server CLI",
     no_args_is_help=True,
     add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 
 
@@ -32,6 +33,9 @@ def main(
         help="输出格式",
         envvar="NFCTL_FORMAT",
     ),
+    jq: str | None = typer.Option(
+        None, "--jq", help="jq 表达式过滤 JSON 输出（隐含 -f json）"
+    ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="静默模式"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="调试日志"),
     no_color: bool = typer.Option(False, "--no-color", help="禁用颜色"),
@@ -39,14 +43,9 @@ def main(
         None, "--version", callback=_version_callback, is_eager=True
     ),
 ) -> None:
-    """Nextflow Monitor Agent CLI"""
-    # --format json 隐含 --quiet
-    if format == OutputFormat.JSON:
-        quiet = True
+    """nf-server CLI"""
+    apply_options(fmt=format, jq=jq)
 
-    set_format(format)
-
-    # 存储全局状态供命令使用
     app._quiet = quiet  # type: ignore[attr-defined]
     app._verbose = verbose  # type: ignore[attr-defined]
 
@@ -70,10 +69,11 @@ app.command("status")(query.status)
 app.command("tasks")(query.tasks)
 app.command("log")(query.log)
 app.command("resources")(query.resources)
+app.command("task")(query.task_detail)
 
 # 管理命令（扁平注册）
 app.command("submit")(workflow.submit)
-app.command("validate")(workflow.validate)
 app.command("resume")(workflow.resume)
 app.command("cancel")(workflow.cancel)
 app.command("delete")(workflow.delete)
+
