@@ -27,6 +27,10 @@ def show() -> None:
             ("resolved_url", data["_resolved_url"]),
         ],
     )
+    console.print()
+    console.print("[dim]配置说明:[/dim]")
+    console.print("[dim]  url           nf-server 地址，通过 nfctl config set url <地址> 设置[/dim]")
+    console.print("[dim]  resolved_url  实际生效地址（NFCTL_URL 环境变量 > config url > 默认 http://localhost:8000）[/dim]")
 
 
 @app.command("set")

@@ -462,6 +462,314 @@ class TestHttpError:
         assert "hint" in data["error"]
 
 
+class TestPipeline:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_list_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            [
+                {
+                    "pipeline_name": "WGS",
+                    "max_concurrent": 5,
+                    "enabled": True,
+                    "created_at": "2026-04-10T08:00:00",
+                    "updated_at": "2026-04-10T08:00:00",
+                },
+            ],
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "pipeline", "list"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert len(data["data"]) == 1
+        assert data["data"][0]["pipeline_name"] == "WGS"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_list_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            [
+                {
+                    "pipeline_name": "WGS",
+                    "max_concurrent": 5,
+                    "enabled": True,
+                    "created_at": "2026-04-10T08:00:00",
+                    "updated_at": "2026-04-10T08:00:00",
+                },
+            ],
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["pipeline", "list"])
+
+        assert result.exit_code == 0
+        assert "WGS" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_create_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            201,
+            {
+                "pipeline_name": "WES",
+                "max_concurrent": 3,
+                "enabled": True,
+                "created_at": "2026-04-16T10:00:00",
+                "updated_at": "2026-04-16T10:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["--format", "json", "pipeline", "create", "WES", "-m", "3"],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["pipeline_name"] == "WES"
+        assert data["data"]["max_concurrent"] == 3
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_create_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            201,
+            {
+                "pipeline_name": "WES",
+                "max_concurrent": None,
+                "enabled": True,
+                "created_at": "2026-04-16T10:00:00",
+                "updated_at": "2026-04-16T10:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["pipeline", "create", "WES"])
+
+        assert result.exit_code == 0
+        assert "WES" in result.output
+        assert "已创建" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_create_disabled(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            201,
+            {
+                "pipeline_name": "WES",
+                "max_concurrent": None,
+                "enabled": False,
+                "created_at": "2026-04-16T10:00:00",
+                "updated_at": "2026-04-16T10:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["--format", "json", "pipeline", "create", "WES", "--disabled"],
+        )
+
+        assert result.exit_code == 0
+        # 验证请求体中 enabled=False
+        call_args = mock_client.request.call_args
+        assert call_args.kwargs["json"]["enabled"] is False
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_update_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "pipeline_name": "WGS",
+                "max_concurrent": 10,
+                "enabled": True,
+                "created_at": "2026-04-10T08:00:00",
+                "updated_at": "2026-04-16T12:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["--format", "json", "pipeline", "update", "WGS", "-m", "10"],
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["max_concurrent"] == 10
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_update_disable(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "pipeline_name": "WGS",
+                "max_concurrent": 5,
+                "enabled": False,
+                "created_at": "2026-04-10T08:00:00",
+                "updated_at": "2026-04-16T12:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["--format", "json", "pipeline", "update", "WGS", "--disabled"],
+        )
+
+        assert result.exit_code == 0
+        call_args = mock_client.request.call_args
+        assert call_args.kwargs["json"]["enabled"] is False
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_update_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "pipeline_name": "WGS",
+                "max_concurrent": 10,
+                "enabled": True,
+                "created_at": "2026-04-10T08:00:00",
+                "updated_at": "2026-04-16T12:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["pipeline", "update", "WGS", "-m", "10"]
+        )
+
+        assert result.exit_code == 0
+        assert "WGS" in result.output
+        assert "已更新" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_delete_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {"pipeline_name": "WGS", "deleted": True},
+        )
+        mock_client_class.return_value = mock_client
+
+        # --format json 跳过确认
+        result = runner.invoke(
+            app, ["--format", "json", "pipeline", "delete", "WGS"]
+        )
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["deleted"] is True
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_delete_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {"pipeline_name": "WGS", "deleted": True},
+        )
+        mock_client_class.return_value = mock_client
+
+        # input "y" 确认删除
+        result = runner.invoke(
+            app, ["pipeline", "delete", "WGS"], input="y\n"
+        )
+
+        assert result.exit_code == 0
+        assert "Deleted" in result.output
+
+    @pytest.mark.unit
+    def test_pipeline_delete_abort(self):
+        # input "n" 拒绝删除
+        result = runner.invoke(
+            app, ["pipeline", "delete", "WGS"], input="n\n"
+        )
+
+        assert result.exit_code != 0  # Abort
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_create_conflict(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            409, {"detail": "Pipeline 'WGS' already exists"}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["--format", "json", "pipeline", "create", "WGS"],
+        )
+
+        assert result.exit_code == 5  # EXIT_CONFLICT
+        data = json.loads(result.output)
+        assert data["ok"] is False
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_delete_not_found(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            404, {"detail": "Pipeline not found"}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "pipeline", "delete", "NONEXIST"]
+        )
+
+        assert result.exit_code == 2  # EXIT_VALIDATION (NOT_FOUND)
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "NOT_FOUND"
+
+
 class TestConfig:
     @pytest.mark.unit
     def test_config_show_json(self):
