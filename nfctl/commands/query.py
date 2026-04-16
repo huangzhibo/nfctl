@@ -82,9 +82,7 @@ def list_workflows(
         current_page = 1
         total = None
         while current_page <= 50:
-            envelope, code = client.get(
-                "/workflow/list", page=current_page, **params
-            )
+            envelope, code = client.get("/workflow/list", page=current_page, **params)
             if not envelope["ok"]:
                 print_result(envelope, code)
             data = envelope["data"]
@@ -94,7 +92,9 @@ def list_workflows(
             all_items.extend(page_items)
             total = data.get("total", 0)
             if not is_json():
-                err_console.print(f"[dim][pagination] 第 {current_page} 页，已获取 {len(all_items)} / {total} 条[/dim]")
+                err_console.print(
+                    f"[dim][pagination] 第 {current_page} 页，已获取 {len(all_items)} / {total} 条[/dim]"
+                )
             if len(all_items) >= total:
                 break
             current_page += 1

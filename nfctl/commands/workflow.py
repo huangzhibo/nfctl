@@ -82,7 +82,10 @@ def submit(
         if is_json():
             print_result({"ok": True, "data": val_data}, 0)
         checks = val_data.get("checks", {})
-        items = [("can_submit", val_data.get("can_submit")), ("workflow_id", workflow_id)]
+        items = [
+            ("can_submit", val_data.get("can_submit")),
+            ("workflow_id", workflow_id),
+        ]
         for name, check in checks.items():
             passed = check.get("passed", False)
             detail = check.get("detail", "")

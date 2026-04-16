@@ -213,9 +213,7 @@ class TestTaskDetail:
         )
         mock_client_class.return_value = mock_client
 
-        result = runner.invoke(
-            app, ["--format", "json", "task", "wf-001", "1"]
-        )
+        result = runner.invoke(app, ["--format", "json", "task", "wf-001", "1"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -286,7 +284,17 @@ class TestTasksSort:
         mock_client_class.return_value = mock_client
 
         result = runner.invoke(
-            app, ["--format", "json", "tasks", "wf-001", "--sort", "duration", "--sort-order", "desc"]
+            app,
+            [
+                "--format",
+                "json",
+                "tasks",
+                "wf-001",
+                "--sort",
+                "duration",
+                "--sort-order",
+                "desc",
+            ],
         )
 
         assert result.exit_code == 0
@@ -306,22 +314,50 @@ class TestListAll:
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
 
-        page1 = _mock_response(200, {
-            "total": 3, "page": 1, "page_size": 2,
-            "items": [
-                {"workflow_id": "wf-001", "status": "running", "progress_percent": 50.0,
-                 "pipeline_name": "WGS", "env": "prod", "updated_at": "2026-04-13T10:00:00"},
-                {"workflow_id": "wf-002", "status": "succeeded", "progress_percent": 100.0,
-                 "pipeline_name": "WGS", "env": "prod", "updated_at": "2026-04-13T09:00:00"},
-            ],
-        })
-        page2 = _mock_response(200, {
-            "total": 3, "page": 2, "page_size": 2,
-            "items": [
-                {"workflow_id": "wf-003", "status": "failed", "progress_percent": 80.0,
-                 "pipeline_name": "WES", "env": "test", "updated_at": "2026-04-13T08:00:00"},
-            ],
-        })
+        page1 = _mock_response(
+            200,
+            {
+                "total": 3,
+                "page": 1,
+                "page_size": 2,
+                "items": [
+                    {
+                        "workflow_id": "wf-001",
+                        "status": "running",
+                        "progress_percent": 50.0,
+                        "pipeline_name": "WGS",
+                        "env": "prod",
+                        "updated_at": "2026-04-13T10:00:00",
+                    },
+                    {
+                        "workflow_id": "wf-002",
+                        "status": "succeeded",
+                        "progress_percent": 100.0,
+                        "pipeline_name": "WGS",
+                        "env": "prod",
+                        "updated_at": "2026-04-13T09:00:00",
+                    },
+                ],
+            },
+        )
+        page2 = _mock_response(
+            200,
+            {
+                "total": 3,
+                "page": 2,
+                "page_size": 2,
+                "items": [
+                    {
+                        "workflow_id": "wf-003",
+                        "status": "failed",
+                        "progress_percent": 80.0,
+                        "pipeline_name": "WES",
+                        "env": "test",
+                        "updated_at": "2026-04-13T08:00:00",
+                    },
+                ],
+            },
+        )
         mock_client.request.side_effect = [page1, page2]
         mock_client_class.return_value = mock_client
 
@@ -341,18 +377,25 @@ class TestSubmitDryRun:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.request.return_value = _mock_response(200, {
-            "can_submit": True,
-            "checks": {
-                "capacity": {"passed": True, "detail": "1/10"},
-                "workflow_id": {"passed": True, "detail": "TOWER_WORKFLOW_ID=wf-new"},
-                "run_sh": {"passed": True, "detail": "OK"},
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "can_submit": True,
+                "checks": {
+                    "capacity": {"passed": True, "detail": "1/10"},
+                    "workflow_id": {
+                        "passed": True,
+                        "detail": "TOWER_WORKFLOW_ID=wf-new",
+                    },
+                    "run_sh": {"passed": True, "detail": "OK"},
+                },
             },
-        })
+        )
         mock_client_class.return_value = mock_client
 
         result = runner.invoke(
-            app, ["--format", "json", "submit", "--dry-run", "-p", "WGS", "/data/sample1"]
+            app,
+            ["--format", "json", "submit", "--dry-run", "-p", "WGS", "/data/sample1"],
         )
 
         assert result.exit_code == 0
@@ -368,14 +411,20 @@ class TestSubmitDryRun:
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.request.return_value = _mock_response(200, {
-            "can_submit": True,
-            "checks": {
-                "capacity": {"passed": True, "detail": "1/10"},
-                "workflow_id": {"passed": True, "detail": "TOWER_WORKFLOW_ID=wf-new"},
-                "run_sh": {"passed": True, "detail": "OK"},
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "can_submit": True,
+                "checks": {
+                    "capacity": {"passed": True, "detail": "1/10"},
+                    "workflow_id": {
+                        "passed": True,
+                        "detail": "TOWER_WORKFLOW_ID=wf-new",
+                    },
+                    "run_sh": {"passed": True, "detail": "OK"},
+                },
             },
-        })
+        )
         mock_client_class.return_value = mock_client
 
         result = runner.invoke(
@@ -670,9 +719,7 @@ class TestPipeline:
         )
         mock_client_class.return_value = mock_client
 
-        result = runner.invoke(
-            app, ["pipeline", "update", "WGS", "-m", "10"]
-        )
+        result = runner.invoke(app, ["pipeline", "update", "WGS", "-m", "10"])
 
         assert result.exit_code == 0
         assert "WGS" in result.output
@@ -691,9 +738,7 @@ class TestPipeline:
         mock_client_class.return_value = mock_client
 
         # --format json 跳过确认
-        result = runner.invoke(
-            app, ["--format", "json", "pipeline", "delete", "WGS"]
-        )
+        result = runner.invoke(app, ["--format", "json", "pipeline", "delete", "WGS"])
 
         assert result.exit_code == 0
         data = json.loads(result.output)
@@ -713,9 +758,7 @@ class TestPipeline:
         mock_client_class.return_value = mock_client
 
         # input "y" 确认删除
-        result = runner.invoke(
-            app, ["pipeline", "delete", "WGS"], input="y\n"
-        )
+        result = runner.invoke(app, ["pipeline", "delete", "WGS"], input="y\n")
 
         assert result.exit_code == 0
         assert "Deleted" in result.output
@@ -723,9 +766,7 @@ class TestPipeline:
     @pytest.mark.unit
     def test_pipeline_delete_abort(self):
         # input "n" 拒绝删除
-        result = runner.invoke(
-            app, ["pipeline", "delete", "WGS"], input="n\n"
-        )
+        result = runner.invoke(app, ["pipeline", "delete", "WGS"], input="n\n")
 
         assert result.exit_code != 0  # Abort
 
