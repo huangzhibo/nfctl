@@ -7,7 +7,14 @@ import sys
 import typer
 
 from nfctl.client import AgentClient
-from nfctl.output import console, is_json, print_kv, print_result, print_table
+from nfctl.output import (
+    console,
+    format_local_time,
+    is_json,
+    print_kv,
+    print_result,
+    print_table,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -76,7 +83,7 @@ def create_pipeline(
             ("pipeline_name", d.get("pipeline_name")),
             ("max_concurrent", d.get("max_concurrent")),
             ("enabled", d.get("enabled")),
-            ("created_at", d.get("created_at")),
+            ("created_at", format_local_time(d.get("created_at"))),
         ],
     )
     sys.exit(code)
@@ -110,7 +117,7 @@ def update_pipeline(
             ("pipeline_name", d.get("pipeline_name")),
             ("max_concurrent", d.get("max_concurrent")),
             ("enabled", d.get("enabled")),
-            ("updated_at", d.get("updated_at")),
+            ("updated_at", format_local_time(d.get("updated_at"))),
         ],
     )
     sys.exit(code)

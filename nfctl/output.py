@@ -9,6 +9,7 @@ import json
 import shutil
 import subprocess
 import sys
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -103,6 +104,23 @@ def print_data(data: Any, exit_code: int = 0) -> None:
     if is_json():
         _output_json({"ok": True, "data": data})
         sys.exit(exit_code)
+
+
+def format_local_time(value: Any) -> Any:
+    """将后端返回的 ISO 8601 时间字符串转为本地时区的 'YYYY-MM-DD HH:MM:SS'。
+
+    服务端约定返回 UTC 时间；若字符串不带时区则按 UTC 解释。
+    解析失败或非字符串原样返回。仅供人类展示使用，JSON 输出应保留原始值。
+    """
+    if not isinstance(value, str) or not value:
+        return value
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def print_table(

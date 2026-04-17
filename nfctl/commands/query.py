@@ -5,7 +5,14 @@
 import typer
 
 from nfctl.client import AgentClient
-from nfctl.output import err_console, is_json, print_kv, print_result, print_table
+from nfctl.output import (
+    err_console,
+    format_local_time,
+    is_json,
+    print_kv,
+    print_result,
+    print_table,
+)
 
 
 def overview() -> None:
@@ -113,8 +120,8 @@ def list_workflows(
     items = data.get("items", [])
     for item in items:
         item["progress_percent"] = f"{item.get('progress_percent', 0):.0f}%"
-        if ts := item.get("updated_at"):
-            item["updated_at"] = str(ts)[:19].replace("T", " ")
+        if item.get("updated_at"):
+            item["updated_at"] = format_local_time(item["updated_at"])
 
     print_table(
         "Workflow 列表",
@@ -159,9 +166,9 @@ def status(
     if d.get("duration"):
         items.append(("duration", f"{d['duration'] / 1000:.0f}s"))
     if d.get("start_time"):
-        items.append(("start_time", d["start_time"]))
+        items.append(("start_time", format_local_time(d["start_time"])))
     if d.get("complete_time"):
-        items.append(("complete_time", d["complete_time"]))
+        items.append(("complete_time", format_local_time(d["complete_time"])))
 
     print_kv(f"Workflow {workflow_id}", items)
 
