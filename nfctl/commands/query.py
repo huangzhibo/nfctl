@@ -152,6 +152,7 @@ def status(
     items = [
         ("workflow_id", d.get("workflow_id")),
         ("status", d.get("status")),
+        ("phase", d.get("phase")),
         ("progress", f"{d.get('progress_percent', 0):.1f}%"),
         ("pipeline", d.get("pipeline_name")),
         ("env", d.get("env")),
@@ -161,14 +162,16 @@ def status(
     ]
     if d.get("error_message"):
         items.append(("error", d["error_message"]))
-    if d.get("error_report"):
-        items.append(("error_report", d["error_report"]))
     if d.get("duration"):
         items.append(("duration", f"{d['duration'] / 1000:.0f}s"))
     if d.get("start_time"):
         items.append(("start_time", format_local_time(d["start_time"])))
     if d.get("complete_time"):
         items.append(("complete_time", format_local_time(d["complete_time"])))
+    if d.get("created_at"):
+        items.append(("created_at", format_local_time(d["created_at"])))
+    if d.get("updated_at"):
+        items.append(("updated_at", format_local_time(d["updated_at"])))
 
     print_kv(f"Workflow {workflow_id}", items)
 

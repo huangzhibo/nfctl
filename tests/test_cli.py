@@ -134,7 +134,7 @@ class TestList:
 class TestStatus:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_status_shows_error_report(self, mock_client_class):
+    def test_status_hides_error_report_in_human_output(self, mock_client_class):
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -158,8 +158,9 @@ class TestStatus:
         result = runner.invoke(app, ["status", "wf-001"])
 
         assert result.exit_code == 0
-        assert "error_report" in result.output
-        assert "exit code 137" in result.output
+        assert "Process failed" in result.output
+        assert "error_report" not in result.output
+        assert "exit code 137" not in result.output
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
