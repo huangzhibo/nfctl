@@ -63,6 +63,9 @@ def list_workflows(
         None, "--pipeline", "-p", help="Pipeline 过滤"
     ),
     env: str | None = typer.Option(None, "--env", help="环境过滤"),
+    project_sn: str | None = typer.Option(
+        None, "--project-sn", "-S", help="按项目编号 (LIMS project_sn) 过滤"
+    ),
     q: str | None = typer.Option(
         None, "--query", "-q", help="搜索 workflow_id/launch_dir"
     ),
@@ -78,6 +81,7 @@ def list_workflows(
         "status": status,
         "pipeline_name": pipeline_name,
         "env": env,
+        "project_sn": project_sn,
         "q": q,
         "page_size": n,
         "sort_by": sort_by,
@@ -131,6 +135,7 @@ def list_workflows(
             ("progress_percent", "Progress"),
             ("pipeline_name", "Pipeline"),
             ("env", "Env"),
+            ("project_sn", "ProjectSN"),
             ("updated_at", "Updated"),
         ],
         items,
@@ -159,6 +164,8 @@ def status(
         ("run_name", d.get("run_name")),
         ("sge_job_id", d.get("sge_job_id")),
     ]
+    if d.get("project_sn"):
+        items.append(("project_sn", d["project_sn"]))
     if d.get("pp_phase"):
         items.append(("post_process", d["pp_phase"]))
     if d.get("error_message"):

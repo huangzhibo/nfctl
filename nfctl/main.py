@@ -20,7 +20,7 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo("nfctl 0.3.0")
+        typer.echo("nfctl 0.4.0")
         raise typer.Exit()
 
 

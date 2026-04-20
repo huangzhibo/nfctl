@@ -72,6 +72,9 @@ def submit(
     launch_dir: str = typer.Argument(help="分析目录路径"),
     pipeline: str = typer.Option(..., "--pipeline", "-p", help="Pipeline 名称"),
     env: str | None = typer.Option(None, "--env", "-e", help="环境 (test/gray/prod)"),
+    project_sn: str | None = typer.Option(
+        None, "--project-sn", "-S", help="项目编号 (LIMS project_sn)"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="仅验证，不实际投递"),
 ) -> None:
     """投递工作流"""
@@ -86,6 +89,8 @@ def submit(
             ("can_submit", val_data.get("can_submit")),
             ("workflow_id", workflow_id),
         ]
+        if project_sn:
+            items.append(("project_sn", project_sn))
         for name, check in checks.items():
             passed = check.get("passed", False)
             detail = check.get("detail", "")
@@ -101,6 +106,8 @@ def submit(
     }
     if env:
         body["env"] = env
+    if project_sn:
+        body["project_sn"] = project_sn
 
     envelope, code = client.post("/workflow/submit", json=body)
 

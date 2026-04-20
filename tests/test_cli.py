@@ -35,7 +35,7 @@ class TestGlobalOptions:
     def test_version(self):
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "0.3.0" in result.output
+        assert "0.4.0" in result.output
 
 
 class TestOverview:
@@ -435,6 +435,143 @@ class TestSubmitDryRun:
         assert result.exit_code == 0
         assert "dry-run" in result.output
         assert "PASS" in result.output
+
+
+class TestSubmitProjectSn:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_submit_sends_project_sn_in_body(self, mock_client_class):
+        """--project-sn 要带到 POST /workflow/submit body 里。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        validate_resp = _mock_response(
+            200,
+            {
+                "can_submit": True,
+                "checks": {
+                    "workflow_id": {
+                        "passed": True,
+                        "detail": "TOWER_WORKFLOW_ID=wf-sn-1",
+                    },
+                },
+            },
+        )
+        submit_resp = _mock_response(
+            200, {"workflow_id": "wf-sn-1", "pipeline_name": "WGS"}
+        )
+        mock_client.request.side_effect = [validate_resp, submit_resp]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            [
+                "--format",
+                "json",
+                "submit",
+                "-p",
+                "WGS",
+                "--project-sn",
+                "SN-2026-001",
+                "/data/sample1",
+            ],
+        )
+
+        assert result.exit_code == 0
+        # 第二次调用是 /workflow/submit
+        submit_call = mock_client.request.call_args_list[1]
+        body = submit_call.kwargs.get("json")
+        assert body["project_sn"] == "SN-2026-001"
+        assert body["workflow_id"] == "wf-sn-1"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_submit_without_project_sn_omits_field(self, mock_client_class):
+        """未传 --project-sn 时 body 不应包含该字段。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        validate_resp = _mock_response(
+            200,
+            {
+                "can_submit": True,
+                "checks": {
+                    "workflow_id": {
+                        "passed": True,
+                        "detail": "TOWER_WORKFLOW_ID=wf-sn-2",
+                    },
+                },
+            },
+        )
+        submit_resp = _mock_response(
+            200, {"workflow_id": "wf-sn-2", "pipeline_name": "WGS"}
+        )
+        mock_client.request.side_effect = [validate_resp, submit_resp]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["--format", "json", "submit", "-p", "WGS", "/data/sample1"],
+        )
+
+        assert result.exit_code == 0
+        submit_call = mock_client.request.call_args_list[1]
+        body = submit_call.kwargs.get("json")
+        assert "project_sn" not in body
+
+
+class TestListProjectSn:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_sends_project_sn_filter_param(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"total": 0, "page": 1, "page_size": 20, "items": []}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            [
+                "--format",
+                "json",
+                "list",
+                "--project-sn",
+                "SN-2026-001",
+            ],
+        )
+
+        assert result.exit_code == 0
+        params = mock_client.request.call_args.kwargs.get("params", {})
+        assert params["project_sn"] == "SN-2026-001"
+
+
+class TestStatusProjectSn:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_displays_project_sn(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "status": "running",
+                "progress_percent": 50.0,
+                "pipeline_name": "WGS",
+                "project_sn": "SN-2026-001",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"])
+
+        assert result.exit_code == 0
+        assert "project_sn" in result.output
+        assert "SN-2026-001" in result.output
 
 
 class TestNetworkError:
