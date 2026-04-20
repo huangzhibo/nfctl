@@ -152,7 +152,6 @@ def status(
     items = [
         ("workflow_id", d.get("workflow_id")),
         ("status", d.get("status")),
-        ("phase", d.get("phase")),
         ("progress", f"{d.get('progress_percent', 0):.1f}%"),
         ("pipeline", d.get("pipeline_name")),
         ("env", d.get("env")),
@@ -160,6 +159,8 @@ def status(
         ("run_name", d.get("run_name")),
         ("sge_job_id", d.get("sge_job_id")),
     ]
+    if d.get("pp_phase"):
+        items.append(("post_process", d["pp_phase"]))
     if d.get("error_message"):
         items.append(("error", d["error_message"]))
     if d.get("duration"):
