@@ -46,7 +46,7 @@ def _do_validate(
             "验证失败",
         )
         print_result(
-            _error(EXIT_VALIDATION, "VALIDATION_ERROR", failed),
+            _error("VALIDATION_ERROR", failed),
             EXIT_VALIDATION,
         )
 
@@ -57,7 +57,6 @@ def _do_validate(
     if not workflow_id:
         print_result(
             _error(
-                EXIT_VALIDATION,
                 "VALIDATION_ERROR",
                 "无法从 run.sh 中提取 TOWER_WORKFLOW_ID",
                 hint="检查 launch_dir 下的 run.sh 是否包含 TOWER_WORKFLOW_ID",

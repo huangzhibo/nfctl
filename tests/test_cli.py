@@ -458,7 +458,7 @@ class TestSubmitProjectSn:
             },
         )
         submit_resp = _mock_response(
-            200, {"workflow_id": "wf-sn-1", "pipeline_name": "WGS"}
+            202, {"workflow_id": "wf-sn-1", "pipeline_name": "WGS"}
         )
         mock_client.request.side_effect = [validate_resp, submit_resp]
         mock_client_class.return_value = mock_client
@@ -504,7 +504,7 @@ class TestSubmitProjectSn:
             },
         )
         submit_resp = _mock_response(
-            200, {"workflow_id": "wf-sn-2", "pipeline_name": "WGS"}
+            202, {"workflow_id": "wf-sn-2", "pipeline_name": "WGS"}
         )
         mock_client.request.side_effect = [validate_resp, submit_resp]
         mock_client_class.return_value = mock_client
@@ -647,6 +647,96 @@ class TestHttpError:
         assert data["ok"] is False
         assert data["error"]["type"] == "CONFLICT"
         assert "hint" in data["error"]
+
+
+class TestStructuredError:
+    """nf-server 新格式:{detail, error_code, hint, resource_id, sge_job_id}"""
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_error_code_drives_exit_code(self, mock_client_class):
+        """TEMPORAL_UNAVAILABLE 走 EXIT_NETWORK(4),便于脚本重试"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            503,
+            {
+                "detail": "Temporal 不可达,无法取消 Main: ...",
+                "error_code": "TEMPORAL_UNAVAILABLE",
+                "resource_id": "wf-001",
+                "hint": "恢复 Temporal 后重试;如需立即释放资源: qdel 12345",
+                "sge_job_id": "12345",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "cancel", "wf-001"])
+
+        # error_code 映射到 EXIT_NETWORK(4),而非 503 默认的 EXIT_SERVER(6)
+        assert result.exit_code == 4
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        err = data["error"]
+        assert err["type"] == "TEMPORAL_UNAVAILABLE"
+        assert err["sge_job_id"] == "12345"
+        assert err["resource_id"] == "wf-001"
+        assert "qdel 12345" in err["hint"]
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_new_format_displays_in_human_mode(self, mock_client_class):
+        """人类模式展示 error_code + sge_job_id + hint"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            503,
+            {
+                "detail": "Temporal 不可达",
+                "error_code": "TEMPORAL_UNAVAILABLE",
+                "hint": "稍后重试",
+                "sge_job_id": "99999",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        # cancel 在人类模式会要求确认,input="y" 绕过
+        result = runner.invoke(app, ["cancel", "wf-001"], input="y\n")
+
+        assert result.exit_code == 4
+        combined = result.stdout + (result.stderr or "")
+        assert "TEMPORAL_UNAVAILABLE" in combined
+        assert "99999" in combined
+        assert "稍后重试" in combined
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_legacy_dict_detail_still_works(self, mock_client_class):
+        """旧格式 detail=dict 仍然能解析(历史响应兼容)"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            503,
+            {
+                "detail": {
+                    "message": "Temporal 不可达",
+                    "sge_job_id": "77777",
+                    "hint": "qdel 77777",
+                }
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "cancel", "wf-001"])
+
+        # 旧格式无 error_code,回退到 HTTP 状态码映射 → EXIT_SERVER
+        assert result.exit_code == 6
+        data = json.loads(result.output)
+        err = data["error"]
+        assert err["sge_job_id"] == "77777"
+        assert "qdel 77777" in err["hint"]
 
 
 class TestPipeline:

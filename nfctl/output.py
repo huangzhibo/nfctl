@@ -88,12 +88,23 @@ def _output_json(obj: dict) -> None:
 
 
 def print_result(envelope: dict, exit_code: int) -> None:
-    """统一输出：JSON 模式直接打印信封，人类模式由调用方渲染"""
+    """统一输出：JSON 模式直接打印信封,人类模式由调用方渲染"""
     if is_json():
         _output_json(envelope)
     elif not envelope.get("ok"):
         err = envelope.get("error", {})
-        err_console.print(f"[red]Error:[/red] {err.get('message', '未知错误')}")
+        message = err.get("message", "未知错误")
+        err_type = err.get("type")
+        header = (
+            f"[red]Error[/red] ({err_type}): {message}"
+            if err_type
+            else f"[red]Error:[/red] {message}"
+        )
+        err_console.print(header)
+        if resource_id := err.get("resource_id"):
+            err_console.print(f"[dim]Resource: {resource_id}[/dim]")
+        if sge_job_id := err.get("sge_job_id"):
+            err_console.print(f"[dim]SGE Job: {sge_job_id}[/dim]")
         if hint := err.get("hint"):
             err_console.print(f"[dim]Hint: {hint}[/dim]")
     sys.exit(exit_code)
