@@ -36,7 +36,9 @@ def main(
     jq: str | None = typer.Option(
         None, "--jq", help="jq 表达式过滤 JSON 输出（隐含 -f json）"
     ),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="静默模式"),
+    quiet: bool = typer.Option(
+        False, "--quiet", "-q", help="跳过交互式确认提示（--format json 自动隐含）"
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="调试日志"),
     no_color: bool = typer.Option(False, "--no-color", help="禁用颜色"),
     _version: bool | None = typer.Option(

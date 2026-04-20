@@ -71,7 +71,9 @@ def list_workflows(
     ),
     n: int = typer.Option(20, "-n", help="每页条数"),
     page: int = typer.Option(1, "--page", help="页码"),
-    all_pages: bool = typer.Option(False, "--all", help="自动遍历所有分页"),
+    all_pages: bool = typer.Option(
+        False, "--all", help="自动遍历分页（最多 50 页，超出静默截断）"
+    ),
     sort_by: str = typer.Option("created_at", "--sort", help="排序字段"),
     sort_order: str = typer.Option("desc", "--sort-order", help="排序方向 (asc/desc)"),
 ) -> None:
@@ -249,7 +251,9 @@ def log(
 def resources(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     exclude_cached: bool = typer.Option(
-        False, "--exclude-cached", help="排除 cached task"
+        False,
+        "--exclude-cached",
+        help="排除 Nextflow 缓存复用的 task（默认聚合含其历史指标）",
     ),
 ) -> None:
     """资源使用统计"""

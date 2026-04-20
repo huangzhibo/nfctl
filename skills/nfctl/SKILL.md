@@ -66,10 +66,11 @@ metadata:
 - **Workflow**：一次 Nextflow 分析流程实例，由 `workflow_id` 标识。`workflow_id` 从 `launch_dir/run.sh` 中的 `TOWER_WORKFLOW_ID=xxx` 读取。
 - **Pipeline**：流程类型（如 `WGS`、`16s`、`ampliseq`），有可选的并发控制（`max_concurrent`）。
 - **Task**：Nextflow 子任务（process 的一次执行），由 `task_id` 标识；运行态见 `status` 字段（CACHED / COMPLETED / FAILED 等）。
-- **Phase**：
-  - `main_status`：Nextflow 主流程状态（succeeded/failed/cancelled/...）
-  - `pp_phase` / `pp_status`：后处理阶段与状态（如 `archive`）
-  - `status`：对外综合状态，`main_status` 和 `pp_status` 都 succeeded 才算 succeeded
+- **Cached task**：Nextflow `-resume` 命中缓存、本次未真正执行、直接复用历史 workdir 的 task。聚合指标里会**保留其首次运行时的 used/requested**（不是 0）。调优本次资源分配请用 `resources --exclude-cached`。
+- **两段式生命周期**：
+  - **main 阶段**：Nextflow 主流程本身，字段 `main_status`（running/succeeded/failed/cancelled/...）
+  - **post-process 阶段**：主流程结束后的后处理（归档/入库等），字段 `pp_phase`（如 `archive`）、`pp_status`（running/succeeded/failed/...）
+  - `status` **只反映 main 阶段**。当 `status=succeeded` 时 post-process 可能仍在 `pp_status=running`；判断"流程真正完结"必须同时看 `pp_status`。
 - **Project SN**：LIMS 项目编号（`project_sn`），业务侧归档/过滤用，与 `env` 正交。
 
 ### 资源关系
