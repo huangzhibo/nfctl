@@ -27,6 +27,9 @@ nfctl overview                           # 系统概览
 nfctl list [--status running] [-n 20]    # 工作流列表
 nfctl list --all                         # 获取全部工作流（自动翻页）
 nfctl list --sort created_at --sort-order asc  # 按创建时间升序
+nfctl list --pipeline WGS --env prod     # 按 Pipeline / 环境过滤
+nfctl list --project-sn P2026001         # 按 LIMS 项目编号过滤
+nfctl list --query sample1               # 按 workflow_id / launch_dir 搜索
 nfctl status <id>                        # 工作流详情
 nfctl tasks <id> [--status failed]       # 子任务列表
 nfctl tasks <id> --sort duration --sort-order desc  # 按耗时排序
@@ -38,11 +41,13 @@ nfctl resources <id>                     # 资源统计
 ### 管理
 
 ```bash
-nfctl submit <dir> --pipeline <name>     # 投递工作流
-nfctl submit <dir> --pipeline <name> --dry-run  # 仅验证，不实际投递
-nfctl resume <id>                        # 恢复失败/取消的工作流
-nfctl cancel <id>                        # 取消运行中的流程
-nfctl delete <id>                        # 删除工作流
+nfctl submit <dir> --pipeline <name>                     # 投递工作流
+nfctl submit <dir> --pipeline <name> --env prod          # 指定环境（test/gray/prod）
+nfctl submit <dir> --pipeline <name> --project-sn P2026001  # 绑定 LIMS 项目编号
+nfctl submit <dir> --pipeline <name> --dry-run           # 仅验证，不实际投递
+nfctl resume <id>                                        # 恢复失败/取消的工作流
+nfctl cancel <id> [--reason "原因"]                      # 取消运行中的流程
+nfctl delete <id>                                        # 删除工作流
 ```
 
 ### 其他
