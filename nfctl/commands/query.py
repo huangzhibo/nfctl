@@ -211,10 +211,18 @@ def tasks(
         print_result(envelope, code)
 
     data = envelope["data"]
+    for t in data.get("tasks", []):
+        h = t.get("hash")
+        if isinstance(h, str):
+            hex_only = h.replace("/", "")
+            if len(hex_only) >= 8:
+                t["hash"] = f"{hex_only[:2]}/{hex_only[2:8]}"
+
     print_table(
         f"Tasks ({workflow_id})",
         [
             ("task_id", "ID"),
+            ("hash", "Hash"),
             ("process", "Process"),
             ("name", "Name"),
             ("status", "Status"),
