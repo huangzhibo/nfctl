@@ -1,6 +1,6 @@
 ---
 name: nfctl
-version: 2.0.0
+version: 0.1.0
 description: "nf-server CLI：投递、监控、诊断 Nextflow 工作流。含输出契约（JSON 信封/退出码）、命令签名速查、投递与失败诊断工作流、资源效率判读。当用户需要投递/查询/诊断 Nextflow 流程，或遇到 nfctl 连接、权限、错误处理问题时触发。"
 metadata:
   requires:
@@ -8,7 +8,7 @@ metadata:
   cliHelp: "nfctl --help"
 ---
 
-# nfctl (v2)
+# nfctl
 
 本技能教 AI Agent 正确使用 nfctl 管理 Nextflow 工作流。参数细节用 `nfctl <cmd> --help` 按需查询，本文件聚焦**契约、判断、工作流**。
 
