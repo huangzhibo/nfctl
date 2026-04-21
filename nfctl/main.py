@@ -5,6 +5,8 @@ nfctl -- nf-server CLI
 输出契约（JSON 信封、退出码）与 lims2 CLI 对齐。
 """
 
+from importlib.metadata import version as _pkg_version
+
 import typer
 
 from nfctl.output import OutputFormat, apply_options
@@ -20,7 +22,7 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo("nfctl 0.5.0")
+        typer.echo(f"nfctl {_pkg_version('nfctl')}")
         raise typer.Exit()
 
 

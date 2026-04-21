@@ -5,6 +5,7 @@ mock httpx 响应，测试 JSON 信封格式、退出码、人类输出。
 """
 
 import json
+from importlib.metadata import version as pkg_version
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,7 +36,7 @@ class TestGlobalOptions:
     def test_version(self):
         result = runner.invoke(app, ["--version"])
         assert result.exit_code == 0
-        assert "0.4.0" in result.output
+        assert pkg_version("nfctl") in result.output
 
 
 class TestOverview:

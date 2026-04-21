@@ -61,6 +61,6 @@ uv run ruff format nfctl     # 格式化
 
 ## 开发约定
 
-- 版本号同时维护在 `pyproject.toml` 和 `main.py`（`_version_callback`）
+- 版本号单一真源为 `pyproject.toml`；`main.py --version` 与测试都通过 `importlib.metadata.version("nfctl")` 读取
 - Ruff 配置忽略 E501（行长）和 B008（参数默认值中的函数调用，Typer 需要）
 - `skills/` 目录存放 AI Agent 的 Skill 文档，不是运行时代码
