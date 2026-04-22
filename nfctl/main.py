@@ -9,6 +9,7 @@ from importlib.metadata import version as _pkg_version
 
 import typer
 
+from nfctl.config import apply_profile_option, list_profiles
 from nfctl.output import OutputFormat, apply_options
 
 app = typer.Typer(
@@ -43,12 +44,24 @@ def main(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="调试日志"),
     no_color: bool = typer.Option(False, "--no-color", help="禁用颜色"),
+    profile: str | None = typer.Option(
+        None,
+        "--profile",
+        help="使用指定 profile 覆盖当前 profile（不影响 NFCTL_URL 直连）",
+        envvar="NFCTL_PROFILE",
+    ),
     _version: bool | None = typer.Option(
         None, "--version", callback=_version_callback, is_eager=True
     ),
 ) -> None:
     """nf-server CLI"""
     apply_options(fmt=format, jq=jq)
+    if profile:
+        profiles, _ = list_profiles()
+        if profile not in profiles:
+            typer.echo(f"profile '{profile}' 不存在", err=True)
+            raise typer.Exit(2)
+    apply_profile_option(profile)
 
     app._quiet = quiet  # type: ignore[attr-defined]
     app._verbose = verbose  # type: ignore[attr-defined]

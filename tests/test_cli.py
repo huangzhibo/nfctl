@@ -1047,10 +1047,11 @@ class TestConfig:
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
-        assert "_resolved_url" in data["data"]
+        assert "resolved_url" in data["data"]
+        assert "profiles" in data["data"]
 
     @pytest.mark.unit
-    def test_config_set_and_show(self, tmp_path, monkeypatch):
+    def test_config_set_creates_default_profile(self, tmp_path, monkeypatch):
         config_file = tmp_path / "config.json"
         monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
         monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
@@ -1061,4 +1062,105 @@ class TestConfig:
         assert result.exit_code == 0
 
         data = json.loads(config_file.read_text())
-        assert data["url"] == "http://test:9000"
+        assert data["current"] == "default"
+        assert data["profiles"]["default"]["url"] == "http://test:9000"
+
+    @pytest.mark.unit
+    def test_config_set_named_profile(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(
+            app,
+            ["config", "set", "url", "http://dev:8000", "--profile", "dev"],
+        )
+        assert result.exit_code == 0
+        result = runner.invoke(
+            app,
+            ["config", "set", "url", "http://prod:8000", "--profile", "prod"],
+        )
+        assert result.exit_code == 0
+
+        data = json.loads(config_file.read_text())
+        assert set(data["profiles"].keys()) == {"dev", "prod"}
+        assert data["current"] == "dev"
+
+    @pytest.mark.unit
+    def test_config_use_switches_current(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("nfctl.config._profile_override", None)
+
+        runner.invoke(app, ["config", "set", "url", "http://a", "--profile", "a"])
+        runner.invoke(app, ["config", "set", "url", "http://b", "--profile", "b"])
+
+        result = runner.invoke(app, ["--format", "json", "config", "use", "b"])
+        assert result.exit_code == 0
+
+        data = json.loads(config_file.read_text())
+        assert data["current"] == "b"
+
+    @pytest.mark.unit
+    def test_config_use_missing_profile(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(app, ["config", "use", "nope"])
+        assert result.exit_code == 2
+
+    @pytest.mark.unit
+    def test_config_list(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        runner.invoke(app, ["config", "set", "url", "http://a", "--profile", "a"])
+        runner.invoke(app, ["config", "set", "url", "http://b", "--profile", "b"])
+
+        result = runner.invoke(app, ["--format", "json", "config", "list"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)["data"]
+        assert data["current"] == "a"
+        names = {p["name"] for p in data["profiles"]}
+        assert names == {"a", "b"}
+
+    @pytest.mark.unit
+    def test_config_remove(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        runner.invoke(app, ["config", "set", "url", "http://a", "--profile", "a"])
+        runner.invoke(app, ["config", "set", "url", "http://b", "--profile", "b"])
+
+        result = runner.invoke(app, ["config", "remove", "a"])
+        assert result.exit_code == 0
+        data = json.loads(config_file.read_text())
+        assert "a" not in data["profiles"]
+        assert data["current"] == "b"
+
+    @pytest.mark.unit
+    def test_legacy_config_migrated_on_read(self, tmp_path, monkeypatch):
+        config_file = tmp_path / "config.json"
+        config_file.write_text('{"url": "http://legacy:8000"}')
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+        monkeypatch.delenv("NFCTL_URL", raising=False)
+        monkeypatch.setattr("nfctl.config._profile_override", None)
+
+        from nfctl.config import get_url, list_profiles
+
+        profiles, current = list_profiles()
+        assert current == "default"
+        assert profiles["default"]["url"] == "http://legacy:8000"
+        assert get_url() == "http://legacy:8000"
+
+    @pytest.mark.unit
+    def test_global_profile_option_unknown(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(app, ["--profile", "nope", "config", "show"])
+        assert result.exit_code == 2
