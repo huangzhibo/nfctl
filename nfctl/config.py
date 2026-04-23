@@ -5,13 +5,13 @@
   显式 profile 参数/--profile CLI/NFCTL_PROFILE
   > NFCTL_URL（直连 URL，绕过 profile）
   > 当前 profile 的 url
-  > 默认 http://localhost:8000
+  > 未配置则抛 ConfigError（不再静默回落到 localhost）
 
 配置文件 ~/.nfctl/config.json：
   {
     "current": "dev",
     "profiles": {
-      "dev":  {"url": "http://localhost:8000"},
+      "dev":  {"url": "http://..."},
       ...
     }
   }
@@ -25,10 +25,17 @@ from pathlib import Path
 
 CONFIG_DIR = Path.home() / ".nfctl"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_URL = "http://localhost:8000"
 DEFAULT_PROFILE = "default"
 
 _profile_override: str | None = None
+
+
+class ConfigError(Exception):
+    """配置缺失或无效。附带可选 hint 让上层复用到错误信封。"""
+
+    def __init__(self, message: str, hint: str | None = None):
+        super().__init__(message)
+        self.hint = hint
 
 
 def apply_profile_option(name: str | None) -> None:
@@ -85,12 +92,15 @@ def get_profile_url(name: str) -> str | None:
 
 
 def get_url(profile: str | None = None) -> str:
-    """按解析链得到 URL。profile 为 None 时使用全局 override / env / current。"""
+    """按解析链得到 URL。无任何配置时抛 ConfigError。"""
     effective = profile or _profile_override
     if effective:
         url = get_profile_url(effective)
         if url is None:
-            raise ValueError(f"profile '{effective}' 不存在")
+            raise ConfigError(
+                f"profile '{effective}' 不存在",
+                hint="使用 nfctl config list 查看可用 profile",
+            )
         return url
 
     if env_url := os.environ.get("NFCTL_URL"):
@@ -100,7 +110,10 @@ def get_url(profile: str | None = None) -> str:
     if current and (prof := profiles.get(current)) and (url := prof.get("url")):
         return str(url).rstrip("/")
 
-    return DEFAULT_URL
+    raise ConfigError(
+        "未配置 nf-server 地址",
+        hint="运行 nfctl config set url <地址>，或设置 NFCTL_URL 环境变量",
+    )
 
 
 def set_profile_url(name: str, url: str) -> None:
@@ -116,7 +129,10 @@ def set_profile_url(name: str, url: str) -> None:
 def use_profile(name: str) -> None:
     cfg = load_config()
     if name not in cfg["profiles"]:
-        raise ValueError(f"profile '{name}' 不存在")
+        raise ConfigError(
+            f"profile '{name}' 不存在",
+            hint="使用 nfctl config list 查看可用 profile",
+        )
     cfg["current"] = name
     _save(cfg)
 
@@ -125,7 +141,10 @@ def remove_profile(name: str) -> None:
     cfg = load_config()
     profiles = cfg["profiles"]
     if name not in profiles:
-        raise ValueError(f"profile '{name}' 不存在")
+        raise ConfigError(
+            f"profile '{name}' 不存在",
+            hint="使用 nfctl config list 查看可用 profile",
+        )
     del profiles[name]
     if cfg["current"] == name:
         cfg["current"] = next(iter(profiles), None)

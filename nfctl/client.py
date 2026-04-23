@@ -23,7 +23,7 @@ from typing import Any
 
 import httpx
 
-from nfctl.config import get_url
+from nfctl.config import ConfigError, get_url
 
 # 退出码(0-4 与 lims2 对齐)
 EXIT_SUCCESS = 0
@@ -55,10 +55,9 @@ _ERROR_CODE_EXIT: dict[str, int] = {
     "NOT_FOUND": EXIT_VALIDATION,
 }
 
-# 无 hint 时按 error_type 兜底的本地提示
+# 无 hint 时按 error_type 兜底的本地提示（只收录 CLI 语境下真正有帮助的）
 _HINTS: dict[str, str] = {
     "CONFLICT": "使用 nfctl cancel 先取消当前流程",
-    "NOT_FOUND": "使用 nfctl list 查看可用的 workflow",
 }
 
 
@@ -66,22 +65,27 @@ class AgentClient:
     """Agent HTTP 客户端"""
 
     def __init__(self, base_url: str | None = None, timeout: float = 30):
-        self._base_url = base_url or get_url()
+        self._explicit_base_url = base_url
         self._timeout = timeout
 
     def _request(self, method: str, path: str, **kwargs: Any) -> tuple[dict, int]:
         """发送请求,返回 (响应体, 退出码)"""
         try:
-            with httpx.Client(base_url=self._base_url, timeout=self._timeout) as client:
+            base_url = self._explicit_base_url or get_url()
+        except ConfigError as e:
+            return _error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION
+
+        try:
+            with httpx.Client(base_url=base_url, timeout=self._timeout) as client:
                 resp = client.request(method, path, **kwargs)
         except httpx.ConnectError:
             return _error(
                 "NETWORK_ERROR",
-                f"无法连接 Agent: {self._base_url}",
-                hint="检查 Agent 是否运行,或设置 NFCTL_URL 环境变量",
+                f"无法连接 Agent: {base_url}",
+                hint="检查 Agent 是否运行，或使用 nfctl config set url 更新地址",
             ), EXIT_NETWORK
         except httpx.TimeoutException:
-            return _error("TIMEOUT", f"请求超时: {self._base_url}{path}"), EXIT_NETWORK
+            return _error("TIMEOUT", f"请求超时: {base_url}{path}"), EXIT_NETWORK
 
         if resp.status_code >= 400:
             envelope, exit_code = _handle_http_error(resp)

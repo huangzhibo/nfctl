@@ -1164,3 +1164,30 @@ class TestConfig:
 
         result = runner.invoke(app, ["--profile", "nope", "config", "show"])
         assert result.exit_code == 2
+
+    @pytest.mark.unit
+    def test_request_without_config(self, tmp_path, monkeypatch):
+        """未配置 URL 且无 NFCTL_URL 时，命令应返回 CONFIG_ERROR 信封"""
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+        monkeypatch.delenv("NFCTL_URL", raising=False)
+
+        result = runner.invoke(app, ["--format", "json", "list"])
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "CONFIG_ERROR"
+        assert "nfctl config set url" in data["error"]["hint"]
+
+    @pytest.mark.unit
+    def test_show_without_config(self, tmp_path, monkeypatch):
+        """未配置时 config show 不应崩溃"""
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+        monkeypatch.delenv("NFCTL_URL", raising=False)
+
+        result = runner.invoke(app, ["--format", "json", "config", "show"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)["data"]
+        assert data["resolved_url"] is None
+        assert "resolve_error" in data

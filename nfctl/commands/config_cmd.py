@@ -7,6 +7,7 @@ import os
 import typer
 
 from nfctl.config import (
+    ConfigError,
     get_url,
     list_profiles,
     remove_profile,
@@ -22,8 +23,14 @@ app = typer.Typer(no_args_is_help=True)
 def show() -> None:
     """显示当前配置"""
     profiles, current = list_profiles()
-    resolved = get_url()
     env_url = os.environ.get("NFCTL_URL")
+
+    try:
+        resolved: str | None = get_url()
+        resolve_error: str | None = None
+    except ConfigError as e:
+        resolved = None
+        resolve_error = str(e)
 
     current_url = None
     if current and current in profiles:
@@ -36,6 +43,8 @@ def show() -> None:
         "profiles": profiles,
         "env_override": bool(env_url),
     }
+    if resolve_error:
+        payload["resolve_error"] = resolve_error
 
     if is_json():
         print_data(payload)
@@ -46,14 +55,19 @@ def show() -> None:
         [
             ("current", current or "(未设置)"),
             ("current_url", current_url or "(未设置)"),
-            ("resolved_url", resolved),
+            ("resolved_url", resolved or "(未配置)"),
         ],
     )
     console.print()
     if env_url:
         console.print(f"[yellow]NFCTL_URL 环境变量生效，已覆盖 profile：{env_url}[/yellow]")
         console.print()
-    console.print("[dim]解析顺序: --profile > NFCTL_URL > 当前 profile > 默认值[/dim]")
+    elif resolve_error:
+        console.print(
+            f"[yellow]{resolve_error}。运行 nfctl config set url <地址> 配置，或设置 NFCTL_URL。[/yellow]"
+        )
+        console.print()
+    console.print("[dim]解析顺序: --profile > NFCTL_URL > 当前 profile[/dim]")
     console.print("[dim]使用 nfctl config list 查看全部 profile[/dim]")
 
 
@@ -92,7 +106,7 @@ def use(
     """切换当前 profile"""
     try:
         use_profile(name)
-    except ValueError as e:
+    except ConfigError as e:
         if is_json():
             print_data({"error": str(e)})
         else:
@@ -148,7 +162,7 @@ def remove(
     """删除 profile"""
     try:
         remove_profile(name)
-    except ValueError as e:
+    except ConfigError as e:
         if is_json():
             print_data({"error": str(e)})
         else:
