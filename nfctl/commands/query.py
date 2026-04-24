@@ -128,6 +128,9 @@ def list_workflows(
         item["progress_percent"] = f"{item.get('progress_percent', 0):.0f}%"
         if item.get("updated_at"):
             item["updated_at"] = format_local_time(item["updated_at"])
+        # env 为空表示内部流程,不向 LIMS 推送进度
+        if not item.get("env"):
+            item["env"] = "internal"
 
     print_table(
         "Workflow 列表",
@@ -161,7 +164,8 @@ def status(
         ("status", d.get("status")),
         ("progress", f"{d.get('progress_percent', 0):.1f}%"),
         ("pipeline", d.get("pipeline_name")),
-        ("env", d.get("env")),
+        # env 为空表示内部流程,不向 LIMS 推送进度
+        ("env", d.get("env") or "internal"),
         ("launch_dir", d.get("launch_dir")),
         ("run_name", d.get("run_name")),
         ("sge_job_id", d.get("sge_job_id")),
