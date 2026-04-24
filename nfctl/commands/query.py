@@ -258,6 +258,38 @@ def log(
         typer.echo(line)
 
 
+def progress(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+) -> None:
+    """工作流进度（含 process 级别明细）"""
+    client = AgentClient()
+    envelope, code = client.get(f"/workflow/{workflow_id}/progress")
+
+    if not envelope["ok"] or is_json():
+        print_result(envelope, code)
+
+    d = envelope["data"]
+    print_kv(
+        f"Progress ({workflow_id})",
+        [("progress_percent", f"{d.get('progress_percent', 0):.1f}%")],
+    )
+
+    print_table(
+        "Process 明细",
+        [
+            ("name", "Process"),
+            ("pending", "Pending"),
+            ("submitted", "Submitted"),
+            ("running", "Running"),
+            ("succeeded", "OK"),
+            ("cached", "Cached"),
+            ("failed", "Failed"),
+            ("aborted", "Aborted"),
+        ],
+        d.get("processes", []),
+    )
+
+
 def resources(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     exclude_cached: bool = typer.Option(

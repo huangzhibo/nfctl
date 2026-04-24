@@ -188,6 +188,71 @@ class TestStatus:
         assert data["data"]["workflow_id"] == "wf-001"
 
 
+class TestProgress:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_progress_json(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "progress_percent": 42.5,
+                "processes": [
+                    {
+                        "name": "FASTQC",
+                        "pending": 0,
+                        "submitted": 0,
+                        "running": 1,
+                        "succeeded": 3,
+                        "cached": 0,
+                        "failed": 0,
+                        "aborted": 0,
+                    },
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "progress", "wf-001"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["progress_percent"] == 42.5
+        assert data["data"]["processes"][0]["name"] == "FASTQC"
+        assert mock_client.request.call_args.args == (
+            "GET",
+            "/workflow/wf-001/progress",
+        )
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_progress_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "progress_percent": 10.0,
+                "processes": [
+                    {"name": "FASTQC", "running": 2, "succeeded": 1},
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["progress", "wf-001"])
+
+        assert result.exit_code == 0
+        assert "FASTQC" in result.output
+        assert "10.0%" in result.output
+
+
 class TestTaskDetail:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
