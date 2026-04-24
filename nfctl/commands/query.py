@@ -28,7 +28,6 @@ def overview() -> None:
         "Workflow 概览",
         [
             ("running", data.get("running", 0)),
-            ("pending", data.get("pending", 0)),
             ("succeeded", data.get("succeeded", 0)),
             ("failed", data.get("failed", 0)),
             ("cancelled", data.get("cancelled", 0)),
@@ -47,7 +46,6 @@ def overview() -> None:
             [
                 ("pipeline_name", "Pipeline"),
                 ("running", "Running"),
-                ("pending", "Pending"),
                 ("succeeded", "OK"),
                 ("failed", "Failed"),
             ],

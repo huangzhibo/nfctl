@@ -397,7 +397,17 @@ class TestSubmitDryRun:
 
         result = runner.invoke(
             app,
-            ["--format", "json", "submit", "--dry-run", "-p", "WGS", "/data/sample1"],
+            [
+                "--format",
+                "json",
+                "submit",
+                "--dry-run",
+                "-p",
+                "WGS",
+                "-S",
+                "SN-2026-001",
+                "/data/sample1",
+            ],
         )
 
         assert result.exit_code == 0
@@ -430,7 +440,16 @@ class TestSubmitDryRun:
         mock_client_class.return_value = mock_client
 
         result = runner.invoke(
-            app, ["submit", "--dry-run", "-p", "WGS", "/data/sample1"]
+            app,
+            [
+                "submit",
+                "--dry-run",
+                "-p",
+                "WGS",
+                "-S",
+                "SN-2026-001",
+                "/data/sample1",
+            ],
         )
 
         assert result.exit_code == 0
@@ -486,39 +505,18 @@ class TestSubmitProjectSn:
         assert body["workflow_id"] == "wf-sn-1"
 
     @pytest.mark.unit
-    @patch("nfctl.client.httpx.Client")
-    def test_submit_without_project_sn_omits_field(self, mock_client_class):
-        """未传 --project-sn 时 body 不应包含该字段。"""
-        mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        validate_resp = _mock_response(
-            200,
-            {
-                "can_submit": True,
-                "checks": {
-                    "workflow_id": {
-                        "passed": True,
-                        "detail": "TOWER_WORKFLOW_ID=wf-sn-2",
-                    },
-                },
-            },
-        )
-        submit_resp = _mock_response(
-            202, {"workflow_id": "wf-sn-2", "pipeline_name": "WGS"}
-        )
-        mock_client.request.side_effect = [validate_resp, submit_resp]
-        mock_client_class.return_value = mock_client
-
+    def test_submit_without_project_sn_errors(self):
+        """未传 --project-sn 时 CLI 应直接拒绝（后端已要求必填）。"""
         result = runner.invoke(
             app,
-            ["--format", "json", "submit", "-p", "WGS", "/data/sample1"],
+            ["submit", "-p", "WGS", "/data/sample1"],
         )
 
-        assert result.exit_code == 0
-        submit_call = mock_client.request.call_args_list[1]
-        body = submit_call.kwargs.get("json")
-        assert "project_sn" not in body
+        assert result.exit_code != 0
+        assert (
+            "project-sn" in result.output.lower()
+            or "project_sn" in result.output.lower()
+        )
 
 
 class TestListProjectSn:
