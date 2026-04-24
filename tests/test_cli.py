@@ -647,7 +647,8 @@ class TestHttpError:
         data = json.loads(result.output)
         assert data["ok"] is False
         assert data["error"]["type"] == "CONFLICT"
-        assert "hint" in data["error"]
+        # 服务端未给 hint 时,envelope 不携带本地兜底(避免 cancel/resume 等场景出现误导性建议)
+        assert "hint" not in data["error"]
 
 
 class TestStructuredError:

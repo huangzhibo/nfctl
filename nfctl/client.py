@@ -55,11 +55,6 @@ _ERROR_CODE_EXIT: dict[str, int] = {
     "NOT_FOUND": EXIT_VALIDATION,
 }
 
-# 无 hint 时按 error_type 兜底的本地提示（只收录 CLI 语境下真正有帮助的）
-_HINTS: dict[str, str] = {
-    "CONFLICT": "使用 nfctl cancel 先取消当前流程",
-}
-
 
 class AgentClient:
     """Agent HTTP 客户端"""
@@ -124,8 +119,6 @@ def _error(
     err: dict[str, Any] = {"type": error_type, "message": message}
     if hint:
         err["hint"] = hint
-    elif error_type in _HINTS:
-        err["hint"] = _HINTS[error_type]
     if resource_id:
         err["resource_id"] = resource_id
     if sge_job_id:
