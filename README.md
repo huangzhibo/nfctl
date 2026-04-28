@@ -86,3 +86,10 @@ uv sync
 uv run nfctl --help
 uv run pytest
 ```
+
+提交前自动跑 ruff（首次 clone 后执行一次）：
+
+```bash
+uv tool install pre-commit   # 或 brew install pre-commit / pipx install pre-commit
+pre-commit install
+```
