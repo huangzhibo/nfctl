@@ -577,11 +577,9 @@ class TestSubmitProjectSn:
             ["submit", "-p", "WGS", "/data/sample1"],
         )
 
-        assert result.exit_code != 0
-        assert (
-            "project-sn" in result.output.lower()
-            or "project_sn" in result.output.lower()
-        )
+        # Typer 缺参退出 2；输出含 "project" 即可（Rich 可能在中间插 ANSI 码）
+        assert result.exit_code == 2
+        assert "project" in result.output.lower()
 
 
 class TestDelete:
