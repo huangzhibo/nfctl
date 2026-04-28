@@ -60,7 +60,9 @@ def show() -> None:
     )
     console.print()
     if env_url:
-        console.print(f"[yellow]NFCTL_URL 环境变量生效，已覆盖 profile：{env_url}[/yellow]")
+        console.print(
+            f"[yellow]NFCTL_URL 环境变量生效，已覆盖 profile：{env_url}[/yellow]"
+        )
         console.print()
     elif resolve_error:
         console.print(
@@ -137,7 +139,9 @@ def list_cmd() -> None:
         return
 
     if not profiles:
-        console.print("[dim]（未配置 profile）使用 nfctl config set url <地址> 创建[/dim]")
+        console.print(
+            "[dim]（未配置 profile）使用 nfctl config set url <地址> 创建[/dim]"
+        )
         return
 
     rows = [
