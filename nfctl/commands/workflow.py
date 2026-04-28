@@ -158,10 +158,27 @@ def cancel(
 def delete(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """删除工作流（仅终态）"""
+    """删除工作流（仅终态；succeeded 视为合规资产，禁止删除）"""
+    client = AgentClient()
+
+    # 成功结果视为合规资产 — CLI 层硬阻止；如需强删走后端 API。
+    detail_envelope, detail_code = client.get(f"/workflow/{workflow_id}")
+    if not detail_envelope["ok"]:
+        print_result(detail_envelope, detail_code)
+
+    if detail_envelope["data"].get("status") == "succeeded":
+        print_result(
+            _error(
+                "VALIDATION_ERROR",
+                "已成功完成的工作流不可删除（成功结果视为合规资产）",
+                hint="如确需清理，请联系管理员通过后端 API 强制处理",
+                resource_id=workflow_id,
+            ),
+            EXIT_VALIDATION,
+        )
+
     _confirm(f"确认删除 {workflow_id}? 此操作不可恢复。")
 
-    client = AgentClient()
     envelope, code = client.delete(f"/workflow/{workflow_id}")
 
     if not envelope["ok"] or is_json():

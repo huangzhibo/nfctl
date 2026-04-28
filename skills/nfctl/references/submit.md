@@ -15,7 +15,7 @@ submit <launch_dir> -p <pipeline>
   ├─► 从 checks.workflow_id.detail 解析 "TOWER_WORKFLOW_ID=xxx"
   │
   └─► POST /workflow/submit（仅当 --dry-run 未设置）
-        输入: workflow_id, launch_dir, pipeline_name, 可选 env/project_sn
+        输入: workflow_id, launch_dir, pipeline_name, project_sn（必填），可选 env
         输出: data.workflow_id, data.pipeline_name
 ```
 
@@ -33,9 +33,9 @@ submit <launch_dir> -p <pipeline>
 |------|------|--------|
 | `launch_dir`（位置参数） | 分析工作目录，必须含可执行的 `run.sh` | 路径是服务端可见的绝对路径 |
 | `-p / --pipeline` | Pipeline 名称，决定并发配额和后处理策略 | 必须是 `pipeline list` 里已注册的名字 |
-| `-e / --env` | 运行环境：`test` / `gray` / `prod` | 决定下游系统（LIMS/存储/归档）走哪一套；**不影响 run.sh 执行** |
-| `-S / --project-sn` | LIMS 项目编号 | 仅用于业务归档与 `list -S` 过滤；与 `--env` **正交**，两者都可省略 |
-| `--dry-run` | 只 validate 不 submit | 服务端幂等，可重复调用 |
+| `-e / --env` | 运行环境：`test` / `gray` / `prod` | 决定下游系统（LIMS/存储/归档）走哪一套；**不影响 run.sh 执行**；可省略 |
+| `-S / --project-sn` | LIMS 项目编号（**必填**） | 业务归档与 launch_dir 所有权校验；与 `--env` 正交 |
+| `--dry-run` | 只 validate 不 submit | 服务端幂等，可重复调用；**仍需提供 `-S`**（CLI 层校验） |
 
 ## dry-run 响应字段
 

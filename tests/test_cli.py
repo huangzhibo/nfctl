@@ -584,6 +584,79 @@ class TestSubmitProjectSn:
         )
 
 
+class TestDelete:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_delete_succeeded_is_blocked(self, mock_client_class):
+        """succeeded 工作流不可删除（CLI 层硬阻止），不应触发 DELETE。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        # 仅返回一次：GET /workflow/{id}
+        mock_client.request.return_value = _mock_response(
+            200,
+            {"workflow_id": "wf-ok", "status": "succeeded"},
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "delete", "wf-ok"])
+
+        assert result.exit_code == 2  # EXIT_VALIDATION
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "VALIDATION_ERROR"
+        assert "成功" in data["error"]["message"]
+        assert data["error"]["resource_id"] == "wf-ok"
+        # 只调用了 GET，没有 DELETE
+        assert mock_client.request.call_count == 1
+        assert mock_client.request.call_args.args[0] == "GET"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_delete_failed_proceeds(self, mock_client_class):
+        """failed/cancelled 等其他终态可正常删除。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        get_resp = _mock_response(200, {"workflow_id": "wf-bad", "status": "failed"})
+        del_resp = _mock_response(200, {"workflow_id": "wf-bad", "deleted": True})
+        mock_client.request.side_effect = [get_resp, del_resp]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "delete", "wf-bad"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["deleted"] is True
+        # 第二次调用是 DELETE
+        assert mock_client.request.call_count == 2
+        assert mock_client.request.call_args_list[1].args == (
+            "DELETE",
+            "/workflow/wf-bad",
+        )
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_delete_get_404_passes_through(self, mock_client_class):
+        """GET 拿不到的工作流（404）应直接返回错误，不进行 DELETE。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            404, {"detail": "workflow not found", "error_code": "NOT_FOUND"}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "delete", "wf-missing"])
+
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "NOT_FOUND"
+        assert mock_client.request.call_count == 1
+
+
 class TestListProjectSn:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")

@@ -92,16 +92,17 @@ Pipeline (可选并发控制)
 overview
 list      [-s STATUS][-p PIPELINE][--env E][-S PROJECT_SN][-q QUERY][-n N][--page P][--all][--sort F][--sort-order asc|desc]
 status    WORKFLOW_ID
+progress  WORKFLOW_ID                    # 整体进度 + process 级 pending/running/succeeded/cached/failed/...
 tasks     WORKFLOW_ID [-s STATUS][--process P][-n N][--page P][--sort F][--sort-order asc|desc]
 task      WORKFLOW_ID TASK_ID
 log       WORKFLOW_ID [-n TAIL][-g GREP]
 resources WORKFLOW_ID [--exclude-cached]
 
 # 管理
-submit    LAUNCH_DIR -p PIPELINE [-e ENV][-S PROJECT_SN][--dry-run]
+submit    LAUNCH_DIR -p PIPELINE -S PROJECT_SN [-e ENV][--dry-run]   # -S 必填
 resume    WORKFLOW_ID
 cancel    WORKFLOW_ID [-r REASON]
-delete    WORKFLOW_ID                    # 仅终态可删
+delete    WORKFLOW_ID                    # 仅 failed/cancelled 可删；succeeded 视为合规资产，硬阻止
 
 # 配置
 config    set KEY VALUE | show
@@ -116,18 +117,22 @@ pipeline  list | create NAME [-m N][--enabled|--disabled] | update NAME [-m N][-
 ### 投递并监控
 
 ```bash
-# 1. dry-run 验证（不实际投递）
-nfctl -f json submit /data/project/sample1 -p WGS --dry-run
+# 1. dry-run 验证（不实际投递；--project-sn 也是必填）
+nfctl -f json submit /data/project/sample1 -p WGS -S P2026001 --dry-run
 # 关注 data.can_submit；失败时 data.checks.* 指出哪一项未过
 
 # 2. 投递
-nfctl -f json submit /data/project/sample1 -p WGS -e prod -S P2026001
+nfctl -f json submit /data/project/sample1 -p WGS -S P2026001 -e prod
 # 成功返回 data.workflow_id
 
 # 3. 轮询（注意两段式：main + post_process 都 succeeded 才算完成）
 nfctl -f json status <workflow_id>
 # 终态判断：data.status ∈ {succeeded, failed, cancelled}
 # 进行中：status=running 或 status=succeeded 且 pp_status=running（仍在后处理）
+
+# 想看每个 process 各自跑到哪：
+nfctl -f json progress <workflow_id>
+# data.processes[*]: {name, pending, submitted, running, succeeded, cached, failed, aborted}
 ```
 
 **submit 的隐式流程**：`POST /workflow/validate` → 从 `launch_dir/run.sh` 提取 `TOWER_WORKFLOW_ID` → `POST /workflow/submit`。详见 [`references/submit.md`](references/submit.md)。
