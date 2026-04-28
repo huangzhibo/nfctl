@@ -1,11 +1,6 @@
 ---
 name: nfctl
-version: 0.1.0
-description: "nf-server CLI：投递、监控、诊断 Nextflow 工作流。含输出契约（JSON 信封/退出码）、命令签名速查、投递与失败诊断工作流、资源效率判读。当用户需要投递/查询/诊断 Nextflow 流程，或遇到 nfctl 连接、权限、错误处理问题时触发。"
-metadata:
-  requires:
-    bins: ["nfctl"]
-  cliHelp: "nfctl --help"
+description: "用 nfctl CLI 投递、查询、诊断 Nextflow 工作流（nf-server 后端）。涵盖 JSON 输出契约、退出码、submit / status / progress / tasks / log / resources 等命令的正确用法，以及失败诊断与资源效率判读。当用户需要操作 Nextflow 流程或排查 nfctl 报错时触发。"
 ---
 
 # nfctl
@@ -54,7 +49,7 @@ metadata:
 | `TEMPORAL_UNAVAILABLE` / `SERVICE_UNAVAILABLE` / `GATEWAY_TIMEOUT` / `UPSTREAM_ERROR` | 服务端依赖临时不可用 | 按退出码 4 处理，可自动重试 |
 | `NOT_FOUND` | workflow 不存在 | `nfctl list` 确认 |
 | `CONFLICT` | 流程已在运行 | 先 `cancel` |
-| `VALIDATION_ERROR` / `BAD_REQUEST` | 参数错误 | 检查参数 |
+| `VALIDATION_ERROR` / `BAD_REQUEST` | 参数错误（含 `delete` 拒删 succeeded 工作流的情况） | 检查参数；如要清理已成功的工作流走后端 API |
 | `SERVER_ERROR` | 服务端内部错误 | 查服务日志 |
 
 ### 配置
@@ -68,9 +63,9 @@ metadata:
 - **Task**：Nextflow 子任务（process 的一次执行），由 `task_id` 标识；运行态见 `status` 字段（CACHED / COMPLETED / FAILED 等）。
 - **Cached task**：Nextflow `-resume` 命中缓存、本次未真正执行、直接复用历史 workdir 的 task。聚合指标里会**保留其首次运行时的 used/requested**（不是 0）。调优本次资源分配请用 `resources --exclude-cached`。
 - **两段式生命周期**：
-  - **main 阶段**：Nextflow 主流程本身，字段 `main_status`（running/succeeded/failed/cancelled/...）
-  - **post-process 阶段**：主流程结束后的后处理（归档/入库等），字段 `pp_phase`（如 `archive`）、`pp_status`（running/succeeded/failed/...）
-  - `status` **只反映 main 阶段**。当 `status=succeeded` 时 post-process 可能仍在 `pp_status=running`；判断"流程真正完结"必须同时看 `pp_status`。
+  - **main 阶段**：Nextflow 主流程本身，字段 `main_status`，取值 `running / succeeded / failed / cancelled`
+  - **post-process 阶段**：主流程结束后的后处理（归档/入库等），字段 `pp_status`（取值 `not_started / running / succeeded / failed / cancelled / skipped`）+ `pp_phase`（取值 `migrate / archive_wait / archive`）
+  - `status` 是 `main_status` 的别名，**只反映 main 阶段**。当 `status=succeeded` 时 post-process 可能仍在 `pp_status=running`；判断"流程真正完结"必须同时看 `pp_status`。
 - **Project SN**：LIMS 项目编号（`project_sn`），业务侧归档/过滤用，与 `env` 正交。
 
 ### 资源关系
@@ -109,7 +104,7 @@ config    set KEY VALUE | show
 pipeline  list | create NAME [-m N][--enabled|--disabled] | update NAME [-m N][--enabled|--disabled] | delete NAME
 ```
 
-状态值：`starting / running / succeeded / failed / cancelled / cleaned_up`。  
+状态值（`MainStatus`）：`running / succeeded / failed / cancelled`。后处理 `pp_status` 见 Core Concepts。  
 排序字段常用：`created_at / updated_at`（list），`task_id / duration`（tasks）。
 
 ## 工作流
