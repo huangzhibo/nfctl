@@ -57,6 +57,37 @@ nfctl pipeline list                      # Pipeline 配置
 nfctl config set/show                    # 配置管理
 ```
 
+## 手动 submit 场景
+
+LIMS 本身就是通过 `nfctl submit` 通道向 nf-server 投递 nextflow 任务的。日常分析任务由 LIMS 自动触发,无需手动操作。以下两种情况需要手动 submit:
+
+1. **LIMS 未正常触发投递**:作为应急补投手段。
+2. **本地独立流程**:不需要同步到 LIMS2 云平台的分析任务。
+
+**只有走过 submit 通道的任务(LIMS 自动触发或手动补投均可),nf-server 才会记录这个任务,才能监控状态、查日志、续跑。**
+
+### 用法
+
+| 参数 | 说明 |
+|------|------|
+| `-p, --pipeline` | Pipeline 名称(必填) |
+| `-S, --project-sn` | LIMS 项目编号(必填) |
+| `-e, --env` | 环境,可选 `test` / `gray` / `prod`;**省略则不转发到 LIMS2 云平台**,按本地独立流程处理 |
+| `--dry-run` | 仅校验参数,不实际投递 |
+
+```bash
+# 场景 1:LIMS 应急补投(同步到云平台)
+nfctl submit /path/to/launch_dir -p WGS -S P2026001 -e prod
+
+# 场景 2:本地独立流程(不同步云平台)
+nfctl submit /path/to/launch_dir -p WGS -S P2026001
+```
+
+### resume 与 qsub 的衔接
+
+- ✅ 走过 submit → 失败后可 `nfctl resume <workflow_id>` 续跑;手动 `qsub run.sh` 接管也能被识别为同一任务。
+- ❌ 没走过 submit、直接 qsub → nf-server 无记录,无法 resume,也无法监控,且没有补救路径。
+
 ## AI Agent 使用
 
 所有命令支持 `--format json`，输出标准信封格式：
