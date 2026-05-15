@@ -151,7 +151,10 @@ def cancel(
         print_result(envelope, code)
 
     d = envelope["data"]
-    console.print(f"[yellow]Cancelled:[/yellow] {d.get('workflow_id')}")
+    console.print(
+        f"[yellow]Cancel signal sent:[/yellow] {d.get('workflow_id')} "
+        f"(状态更新需数秒,可用 nfctl status 确认)"
+    )
     sys.exit(code)
 
 
