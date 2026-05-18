@@ -66,7 +66,7 @@ description: "用 nfctl CLI 投递、查询、诊断 Nextflow 工作流（nf-ser
   - **main 阶段**：Nextflow 主流程本身，字段 `main_status`，取值 `running / succeeded / failed / cancelled`
   - **post-process 阶段**：主流程结束后的后处理（归档/入库等），字段 `pp_status`（取值 `not_started / running / succeeded / failed / cancelled / skipped`）+ `pp_phase`（取值 `migrate / archive_wait / archive`）
   - `status` 是 `main_status` 的别名，**只反映 main 阶段**。当 `status=succeeded` 时 post-process 可能仍在 `pp_status=running`；判断"流程真正完结"必须同时看 `pp_status`。
-- **Project SN**：LIMS 项目编号（`project_sn`），业务侧归档/过滤用，与 `env` 正交。
+- **Project SN / Data Number**：`project_sn` 是 LIMS 项目编号，`data_number` 是项目下的数据编号（更细一层）；两者均可用于 `list` 过滤（`-S` / `-D`），`-q` 搜索范围也覆盖 `data_number`。
 
 ### 资源关系
 
@@ -85,7 +85,7 @@ Pipeline (可选并发控制)
 ```
 # 查询
 overview
-list      [-s STATUS][-p PIPELINE][--env E][-S PROJECT_SN][-q QUERY][-n N][--page P][--all][--sort F][--sort-order asc|desc]
+list      [-s STATUS][-p PIPELINE][--env E][-S PROJECT_SN][-D DATA_NUMBER][-q QUERY][-n N][--page P][--all][--sort F][--sort-order asc|desc]
 status    WORKFLOW_ID
 progress  WORKFLOW_ID                    # 整体进度 + process 级 pending/running/succeeded/cached/failed/...
 tasks     WORKFLOW_ID [-s STATUS][--process P][-n N][--page P][--sort F][--sort-order asc|desc]
