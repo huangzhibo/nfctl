@@ -29,7 +29,8 @@ nfctl list --all                         # 获取全部工作流（自动翻页�
 nfctl list --sort created_at --sort-order asc  # 按创建时间升序
 nfctl list --pipeline WGS --env prod     # 按 Pipeline / 环境过滤
 nfctl list --project-sn P2026001         # 按 LIMS 项目编号过滤
-nfctl list --query sample1               # 按 workflow_id / launch_dir 搜索
+nfctl list --data-number D001            # 按数据编号过滤
+nfctl list --query sample1               # 按 workflow_id / launch_dir / data_number 搜索
 nfctl status <id>                        # 工作流详情
 nfctl progress <id>                      # 进度（含 process 级别明细）
 nfctl tasks <id> [--status failed]       # 子任务列表
