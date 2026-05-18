@@ -64,8 +64,11 @@ def list_workflows(
     project_sn: str | None = typer.Option(
         None, "--project-sn", "-S", help="按项目编号 (LIMS project_sn) 过滤"
     ),
+    data_number: str | None = typer.Option(
+        None, "--data-number", "-D", help="按数据编号 (data_number) 过滤"
+    ),
     q: str | None = typer.Option(
-        None, "--query", "-q", help="搜索 workflow_id/launch_dir"
+        None, "--query", "-q", help="搜索 workflow_id/launch_dir/data_number"
     ),
     n: int = typer.Option(20, "-n", help="每页条数"),
     page: int = typer.Option(1, "--page", help="页码"),
@@ -82,6 +85,7 @@ def list_workflows(
         "pipeline_name": pipeline_name,
         "env": env,
         "project_sn": project_sn,
+        "data_number": data_number,
         "q": q,
         "page_size": n,
         "sort_by": sort_by,
@@ -170,8 +174,15 @@ def status(
     ]
     if d.get("project_sn"):
         items.append(("project_sn", d["project_sn"]))
+    if d.get("data_number"):
+        items.append(("data_number", d["data_number"]))
+    if d.get("data_path"):
+        items.append(("data_path", d["data_path"]))
     if d.get("pp_phase"):
-        items.append(("post_process", d["pp_phase"]))
+        pp = d["pp_phase"]
+        if d.get("pp_status"):
+            pp = f"{pp} ({d['pp_status']})"
+        items.append(("post_process", pp))
     if d.get("error_message"):
         items.append(("error", d["error_message"]))
     if d.get("duration"):
