@@ -154,11 +154,19 @@ def print_table(
 
 
 def print_kv(title: str, items: list[tuple[str, Any]]) -> None:
-    """渲染 key-value 详情（仅人类模式）"""
+    """渲染 key-value 详情（仅人类模式）。
+
+    多行 value（如多行 error_message / script）的续行对齐到 value 列,
+    避免 `\\n` 之后顶格破坏纵向对齐。
+    """
     console.print(f"[bold]{title}[/bold]")
     max_key = max(len(k) for k, _ in items) if items else 0
+    cont_indent = " " * (2 + max_key + 2)  # 前导2 + key列宽 + 分隔2
     for key, value in items:
-        console.print(f"  {key:<{max_key}}  {_format_cell(value)}")
+        cell = _format_cell(value)
+        if "\n" in cell:
+            cell = cell.replace("\n", "\n" + cont_indent)
+        console.print(f"  {key:<{max_key}}  {cell}")
 
 
 # 状态颜色映射
@@ -168,6 +176,11 @@ _STATUS_COLORS: dict[str, str] = {
     "succeeded": "green",
     "failed": "red",
     "cancelled": "dim",
+    # 对外展示状态(display_status)：颜色本身隐含"要不要关注"
+    "post_processing": "blue",
+    "archive_pending": "cyan",
+    "completed": "green",
+    "archive_failed": "yellow",  # 分析成功结果可用,仅归档失败
 }
 
 

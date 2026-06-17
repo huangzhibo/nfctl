@@ -131,6 +131,75 @@ class TestList:
         assert data["ok"] is True
         assert data["data"]["total"] == 1
 
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_table_shows_display_status(self, mock_client_class):
+        """Status 列展示 server 派生的 display_status,而非原始 main_status。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "total": 1,
+                "page": 1,
+                "page_size": 20,
+                "items": [
+                    {
+                        "workflow_id": "wf-001",
+                        "status": "succeeded",
+                        "display_status": "archive_pending",
+                        "needs_action": False,
+                        "progress_percent": 100.0,
+                        "pipeline_name": "WGS",
+                        "env": "prod",
+                        "updated_at": "2026-04-13T10:00:00",
+                    }
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["list"])
+
+        assert result.exit_code == 0
+        # Status 列改用 display_status(表格列宽可能截断长值,故断言前缀);
+        # 同时确认不再展示原始 main_status。
+        assert "archive" in result.output
+        assert "succeeded" not in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_falls_back_to_main_status_for_old_server(self, mock_client_class):
+        """旧 server 无 display_status 时回退到 main_status,不留空。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "total": 1,
+                "page": 1,
+                "page_size": 20,
+                "items": [
+                    {
+                        "workflow_id": "wf-001",
+                        "status": "running",
+                        "progress_percent": 45.0,
+                        "pipeline_name": "WGS",
+                        "env": "prod",
+                        "updated_at": "2026-04-13T10:00:00",
+                    }
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["list"])
+
+        assert result.exit_code == 0
+        assert "running" in result.output
+
 
 class TestStatus:
     @pytest.mark.unit
@@ -186,6 +255,92 @@ class TestStatus:
         data = json.loads(result.output)
         assert data["ok"] is True
         assert data["data"]["workflow_id"] == "wf-001"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_shows_derived_fields(self, mock_client_class):
+        """详情展示 display_status + summary + archive_eta（等待归档场景）。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "status": "succeeded",
+                "display_status": "archive_pending",
+                "status_summary": "等待归档（约 9h 后自动开始）",
+                "needs_action": False,
+                "archive_eta": "2026-06-18T04:43:16+00:00",
+                "pp_phase": "archive_wait",
+                "pp_status": "running",
+                "progress_percent": 100.0,
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"])
+
+        assert result.exit_code == 0
+        assert "archive_pending" in result.output
+        assert "summary" in result.output
+        assert "等待归档" in result.output
+        assert "archive_eta" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_marks_needs_action(self, mock_client_class):
+        """归档失败需介入时,详情有醒目的 needs_action 标记。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "status": "succeeded",
+                "display_status": "archive_failed",
+                "status_summary": "分析成功、结果可用；归档失败，可 resume 重试",
+                "needs_action": True,
+                "pp_phase": "archive",
+                "pp_status": "failed",
+                "progress_percent": 100.0,
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"])
+
+        assert result.exit_code == 0
+        assert "archive_failed" in result.output
+        assert "needs_action" in result.output
+        assert "需介入" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_multiline_error_is_aligned(self, mock_client_class):
+        """多行 error 的续行对齐到 value 列,不顶格。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "status": "failed",
+                "progress_percent": 38.0,
+                "error_message": "报错步骤：enrich (1)\n报错原因：'g1'",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"])
+
+        assert result.exit_code == 0
+        assert "报错步骤" in result.output
+        assert "报错原因" in result.output
+        # 续行已缩进对齐:不存在顶格(紧跟换行)的续行
+        assert "\n报错原因" not in result.output
 
 
 class TestProgress:

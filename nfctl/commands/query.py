@@ -133,12 +133,14 @@ def list_workflows(
         # env 为空表示内部流程,不向 LIMS 推送进度
         if not item.get("env"):
             item["env"] = "internal"
+        # 对外统一展示状态(server 派生);旧 server 无此字段时回退 main_status
+        item["display_status"] = item.get("display_status") or item.get("status")
 
     print_table(
         "Workflow 列表",
         [
             ("workflow_id", "ID"),
-            ("status", "Status"),
+            ("display_status", "Status"),
             ("progress_percent", "Progress"),
             ("pipeline_name", "Pipeline"),
             ("env", "Env"),
@@ -163,7 +165,9 @@ def status(
     d = envelope["data"]
     items = [
         ("workflow_id", d.get("workflow_id")),
-        ("status", d.get("status")),
+        # 对外统一展示状态(server 派生);旧 server 无此字段时回退 main_status
+        ("status", d.get("display_status") or d.get("status")),
+        ("summary", d.get("status_summary")),
         ("progress", f"{d.get('progress_percent', 0):.1f}%"),
         ("pipeline", d.get("pipeline_name")),
         # env 为空表示内部流程,不向 LIMS 推送进度
@@ -172,6 +176,13 @@ def status(
         ("run_name", d.get("run_name")),
         ("sge_job_id", d.get("sge_job_id")),
     ]
+    # summary 为空(旧 server)时去掉该行,避免显示 "summary  -"
+    if not d.get("status_summary"):
+        items = [it for it in items if it[0] != "summary"]
+    # 需人介入(失败/归档失败)时醒目标记
+    if d.get("needs_action"):
+        idx = next((i for i, it in enumerate(items) if it[0] == "status"), 0)
+        items.insert(idx + 1, ("needs_action", "[yellow]是（需介入）[/yellow]"))
     if d.get("project_sn"):
         items.append(("project_sn", d["project_sn"]))
     if d.get("data_number"):
@@ -183,6 +194,9 @@ def status(
         if d.get("pp_status"):
             pp = f"{pp} ({d['pp_status']})"
         items.append(("post_process", pp))
+    # 等待归档时显示预计自动开始时间(server 派生的 archive_eta)
+    if d.get("archive_eta"):
+        items.append(("archive_eta", format_local_time(d["archive_eta"])))
     if d.get("error_message"):
         items.append(("error", d["error_message"]))
     if d.get("duration"):
