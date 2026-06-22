@@ -1246,6 +1246,116 @@ class TestPipeline:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
+    def test_pipeline_create_with_archive_policy(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            201,
+            {
+                "pipeline_name": "WES",
+                "max_concurrent": None,
+                "enabled": True,
+                "archive_enabled": True,
+                "large_file_threshold": "500M",
+                "archive_dirs": "work,results",
+                "archive_delay_hours": 48,
+                "created_at": "2026-04-16T10:00:00",
+                "updated_at": "2026-04-16T10:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            [
+                "--format",
+                "json",
+                "pipeline",
+                "create",
+                "WES",
+                "--archive",
+                "--large-file-threshold",
+                "500M",
+                "--archive-dirs",
+                "work,results",
+                "--archive-delay-hours",
+                "48",
+            ],
+        )
+
+        assert result.exit_code == 0
+        body = mock_client.request.call_args.kwargs["json"]
+        assert body["archive_enabled"] is True
+        assert body["large_file_threshold"] == "500M"
+        assert body["archive_dirs"] == "work,results"
+        assert body["archive_delay_hours"] == 48
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_create_defaults_archive_off(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            201,
+            {
+                "pipeline_name": "WES",
+                "enabled": True,
+                "archive_enabled": False,
+                "created_at": "2026-04-16T10:00:00",
+                "updated_at": "2026-04-16T10:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "pipeline", "create", "WES"])
+
+        assert result.exit_code == 0
+        body = mock_client.request.call_args.kwargs["json"]
+        # 未指定时默认不归档、不迁移
+        assert body["archive_enabled"] is False
+        assert "large_file_threshold" not in body
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_update_disable_migrate(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "pipeline_name": "WGS",
+                "enabled": True,
+                "archive_enabled": True,
+                "large_file_threshold": "",
+                "created_at": "2026-04-10T08:00:00",
+                "updated_at": "2026-04-16T12:00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        # 传空串 = 关闭迁移（服务端 bool("") → migrate off）
+        result = runner.invoke(
+            app,
+            [
+                "--format",
+                "json",
+                "pipeline",
+                "update",
+                "WGS",
+                "--large-file-threshold",
+                "",
+            ],
+        )
+
+        assert result.exit_code == 0
+        body = mock_client.request.call_args.kwargs["json"]
+        assert body["large_file_threshold"] == ""
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
     def test_pipeline_delete_json(self, mock_client_class):
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
