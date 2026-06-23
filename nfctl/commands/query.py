@@ -172,7 +172,8 @@ def status(
         ("env", d.get("env") or "internal"),
         ("launch_dir", d.get("launch_dir")),
         ("run_name", d.get("run_name")),
-        ("sge_job_id", d.get("sge_job_id")),
+        # 真源字段 job_id;回退 sge_job_id 兼容旧 server 的过渡别名
+        ("job_id", d.get("job_id") or d.get("sge_job_id")),
     ]
     # summary 为空(旧 server)时去掉该行,避免显示 "summary  -"
     if not d.get("status_summary"):

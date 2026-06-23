@@ -11,11 +11,11 @@ nf-server 升级后错误响应顶层扁平:
         "error_code": "CONFLICT|NOT_FOUND|TEMPORAL_UNAVAILABLE|...",
         "hint": "修复建议(可选)",
         "resource_id": "workflow_id 等(可选)",
-        "sge_job_id": "SGE 作业 ID(可选,cancel 失败时)"
+        "job_id": "调度器作业 ID(可选,cancel 失败时;旧 server 为 sge_job_id)"
     }
 
 本客户端的错误信封:
-    {"ok": False, "error": {"type": ..., "message": ..., "hint": ..., "sge_job_id": ..., "resource_id": ...}}
+    {"ok": False, "error": {"type": ..., "message": ..., "hint": ..., "job_id": ..., "resource_id": ...}}
 其中 type 优先用服务端 error_code,回退到 HTTP 状态码映射。
 """
 
@@ -113,7 +113,7 @@ def _error(
     *,
     hint: str | None = None,
     resource_id: str | None = None,
-    sge_job_id: str | None = None,
+    job_id: str | None = None,
 ) -> dict:
     """构造错误信封"""
     err: dict[str, Any] = {"type": error_type, "message": message}
@@ -121,8 +121,8 @@ def _error(
         err["hint"] = hint
     if resource_id:
         err["resource_id"] = resource_id
-    if sge_job_id:
-        err["sge_job_id"] = sge_job_id
+    if job_id:
+        err["job_id"] = job_id
     return {"ok": False, "error": err}
 
 
@@ -156,22 +156,23 @@ def _handle_http_error(resp: httpx.Response) -> tuple[dict, int]:
     if isinstance(detail, dict):
         message = str(detail.get("message") or detail)
         legacy_hint = detail.get("hint")
-        legacy_sge = detail.get("sge_job_id")
+        # 真源字段 job_id;回退 sge_job_id 兼容旧 server 的过渡别名
+        legacy_job = detail.get("job_id") or detail.get("sge_job_id")
     else:
         message = (
             detail if isinstance(detail, str) and detail else f"HTTP {resp.status_code}"
         )
         legacy_hint = None
-        legacy_sge = None
+        legacy_job = None
 
     hint = body.get("hint") or legacy_hint
     resource_id = body.get("resource_id")
-    sge_job_id = body.get("sge_job_id") or legacy_sge
+    job_id = body.get("job_id") or body.get("sge_job_id") or legacy_job
 
     return _error(
         error_type,
         message,
         hint=hint,
         resource_id=resource_id,
-        sge_job_id=sge_job_id,
+        job_id=job_id,
     ), exit_code

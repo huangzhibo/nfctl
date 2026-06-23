@@ -103,8 +103,8 @@ def print_result(envelope: dict, exit_code: int) -> None:
         err_console.print(header)
         if resource_id := err.get("resource_id"):
             err_console.print(f"[dim]Resource: {resource_id}[/dim]")
-        if sge_job_id := err.get("sge_job_id"):
-            err_console.print(f"[dim]SGE Job: {sge_job_id}[/dim]")
+        if job_id := err.get("job_id"):
+            err_console.print(f"[dim]Job: {job_id}[/dim]")
         if hint := err.get("hint"):
             err_console.print(f"[dim]Hint: {hint}[/dim]")
     sys.exit(exit_code)
