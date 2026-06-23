@@ -1140,6 +1140,108 @@ class TestPipeline:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
+    def test_pipeline_get_table(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            [
+                {
+                    "pipeline_name": "ngm",
+                    "max_concurrent": 20,
+                    "enabled": True,
+                    "feishu_webhook": None,
+                    "archive_enabled": True,
+                    "large_file_threshold": None,
+                    "archive_dirs": "work",
+                    "archive_delay_hours": 72,
+                    "created_at": "2026-06-24T02:09:39",
+                    "updated_at": "2026-06-24T03:00:00",
+                },
+                {
+                    "pipeline_name": "WGS",
+                    "max_concurrent": 5,
+                    "enabled": True,
+                    "created_at": "2026-04-10T08:00:00",
+                    "updated_at": "2026-04-10T08:00:00",
+                },
+            ],
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["pipeline", "get", "ngm"])
+
+        assert result.exit_code == 0
+        # 从 list 筛出 ngm,详情含归档目录与 updated_at;不渲染其它 pipeline
+        assert "ngm" in result.output
+        assert "work" in result.output
+        assert "archive_dirs" in result.output
+        assert "updated_at" in result.output
+        assert "WGS" not in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_get_json_single(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            [
+                {
+                    "pipeline_name": "ngm",
+                    "enabled": True,
+                    "created_at": "2026-06-24T02:09:39",
+                    "updated_at": "2026-06-24T03:00:00",
+                },
+                {
+                    "pipeline_name": "WGS",
+                    "enabled": True,
+                    "created_at": "2026-04-10T08:00:00",
+                    "updated_at": "2026-04-10T08:00:00",
+                },
+            ],
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "pipeline", "get", "ngm"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        # 输出的是筛出的单个对象,不是整个 list
+        assert isinstance(data["data"], dict)
+        assert data["data"]["pipeline_name"] == "ngm"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_pipeline_get_not_found(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            [
+                {
+                    "pipeline_name": "WGS",
+                    "enabled": True,
+                    "created_at": "2026-04-10T08:00:00",
+                    "updated_at": "2026-04-10T08:00:00",
+                },
+            ],
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "pipeline", "get", "NOPE"])
+
+        assert result.exit_code != 0
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "NOT_FOUND"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
     def test_pipeline_create_json(self, mock_client_class):
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)

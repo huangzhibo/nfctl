@@ -7,7 +7,7 @@ from typing import Any
 
 import typer
 
-from nfctl.client import AgentClient
+from nfctl.client import EXIT_ERROR, AgentClient
 from nfctl.output import (
     console,
     format_local_time,
@@ -69,10 +69,50 @@ def list_pipelines() -> None:
             ("max_concurrent", "Max Concurrent"),
             ("enabled", "Enabled"),
             ("archive_enabled", "Archive"),
+            ("archive_dirs", "Archive Dirs"),
+            ("archive_delay_hours", "Delay(h)"),
             ("large_file_threshold", "Migrate(threshold)"),
         ],
         data,
     )
+
+
+@app.command("get")
+def get_pipeline(
+    pipeline_name: str = typer.Argument(help="Pipeline 名称"),
+) -> None:
+    """查看单个 Pipeline 的完整配置（含 feishu_webhook 与时间戳等全字段）"""
+    client = AgentClient()
+    envelope, code = client.get("/pipeline/")
+
+    if not envelope["ok"]:
+        print_result(envelope, code)
+
+    data = envelope["data"]
+    if not isinstance(data, list):
+        data = []
+    match = next((p for p in data if p.get("pipeline_name") == pipeline_name), None)
+
+    if match is None:
+        print_result(
+            {
+                "ok": False,
+                "error": {
+                    "type": "NOT_FOUND",
+                    "message": f"Pipeline '{pipeline_name}' 不存在",
+                },
+            },
+            EXIT_ERROR,
+        )
+        return  # print_result 已退出,此处仅供类型收窄
+
+    if is_json():
+        print_result({"ok": True, "data": match}, code)
+
+    items = _detail_items(match, "created_at")
+    items.append(("updated_at", format_local_time(match.get("updated_at"))))
+    print_kv(f"Pipeline {pipeline_name}", items)
+    sys.exit(code)
 
 
 @app.command("create")
