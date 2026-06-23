@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/huangzhibo/nfctl/compare/v0.7.0...v0.8.0) (2026-06-23)
+
+
+### 新功能
+
+* **pipeline:** create/update 对齐 pipeline API 全部可写字段 ([fb17564](https://github.com/huangzhibo/nfctl/commit/fb17564f37845ab4d3b66af3500ed8be342c7866))
+* **query:** 展示对外统一状态并修复多行 value 对齐 ([f58dde3](https://github.com/huangzhibo/nfctl/commit/f58dde364ced3df503a766ae94f362e51893359b))
+* 对齐 nf-server per-pipeline 并发挂起与 cancel scope ([9a2f576](https://github.com/huangzhibo/nfctl/commit/9a2f57635abb73a99f9e9878433cb38993782529))
+
 ## [0.7.0](https://github.com/huangzhibo/nfctl/compare/v0.6.0...v0.7.0) (2026-05-18)
 
 
