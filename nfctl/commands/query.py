@@ -32,10 +32,8 @@ def overview() -> None:
             ("failed", data.get("failed", 0)),
             ("cancelled", data.get("cancelled", 0)),
             ("total", data.get("total", 0)),
-            (
-                "queue_waiting",
-                f"{data.get('queue_waiting', 0)} / {data.get('queue_waiting_limit', 0)}",
-            ),
+            # SGE 当前等待数(纯监控);全局阈值已退役,并发控制下沉到 per-pipeline max_concurrent
+            ("queue_waiting", data.get("queue_waiting", 0)),
         ],
     )
 

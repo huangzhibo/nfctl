@@ -47,7 +47,8 @@ nfctl submit <dir> -p <name> -S P2026001                 # 投递工作流（--p
 nfctl submit <dir> -p <name> -S P2026001 --env prod      # 指定环境（test/gray/prod）
 nfctl submit <dir> -p <name> -S P2026001 --dry-run       # 仅验证，不实际投递
 nfctl resume <id>                                        # 恢复失败/取消的工作流
-nfctl cancel <id> [--reason "原因"]                      # 取消运行中的流程
+nfctl cancel <id> [--reason "原因"]                      # 整体撤销流程（running/succeeded 均可，会通知 LIMS 作废）
+nfctl cancel <id> --scope archive                        # 仅取消后处理/归档，保留分析结果
 nfctl delete <id>                                        # 删除工作流（succeeded 不可删）
 ```
 

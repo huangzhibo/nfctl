@@ -57,7 +57,6 @@ class TestOverview:
                 "total": 16,
                 "by_pipeline": [],
                 "queue_waiting": 5,
-                "queue_waiting_limit": 50,
             },
         )
         mock_client_class.return_value = mock_client
@@ -86,7 +85,6 @@ class TestOverview:
                 "total": 6,
                 "by_pipeline": [],
                 "queue_waiting": 0,
-                "queue_waiting_limit": 50,
             },
         )
         mock_client_class.return_value = mock_client
@@ -1028,6 +1026,62 @@ class TestStructuredError:
         err = data["error"]
         assert err["sge_job_id"] == "77777"
         assert "qdel 77777" in err["hint"]
+
+
+class TestCancel:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_cancel_default_scope_workflow(self, mock_client_class):
+        """默认 scope=workflow,整体撤销(可作用于已成功的流程)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"workflow_id": "wf-001"}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "cancel", "wf-001"])
+
+        assert result.exit_code == 0
+        body = mock_client.request.call_args.kwargs["json"]
+        assert body["scope"] == "workflow"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_cancel_archive_scope(self, mock_client_class):
+        """--scope archive 只取消归档,保留分析结果。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"workflow_id": "wf-001"}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "cancel", "wf-001", "--scope", "archive"]
+        )
+
+        assert result.exit_code == 0
+        body = mock_client.request.call_args.kwargs["json"]
+        assert body["scope"] == "archive"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_cancel_invalid_scope_rejected(self, mock_client_class):
+        """非法 scope 在 CLI 层拦截,不发请求。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "cancel", "wf-001", "--scope", "bogus"]
+        )
+
+        assert result.exit_code == 2
+        mock_client.request.assert_not_called()
 
 
 class TestPipeline:

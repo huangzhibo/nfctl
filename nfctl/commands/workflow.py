@@ -136,12 +136,36 @@ def resume(
 def cancel(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
+    scope: str = typer.Option(
+        "workflow",
+        "--scope",
+        help=(
+            "取消范围。workflow(默认)=整体撤销:可取消运行中或已成功的流程,"
+            "终态置 cancelled 并把作废状态重推 LIMS;archive=仅取消后处理/归档,"
+            "保留成功的分析结果(LIMS 仍 100%)"
+        ),
+    ),
 ) -> None:
-    """取消运行中的流程"""
-    _confirm(f"确认取消 {workflow_id}?")
+    """取消流程(整体撤销)或仅取消归档"""
+    if scope not in ("workflow", "archive"):
+        print_result(
+            _error(
+                "VALIDATION_ERROR",
+                f"无效的 --scope: {scope}",
+                hint="可选值: workflow(整体撤销,默认) / archive(仅取消归档)",
+            ),
+            EXIT_VALIDATION,
+        )
+
+    prompt = (
+        f"确认仅取消 {workflow_id} 的归档(保留分析结果)?"
+        if scope == "archive"
+        else f"确认取消 {workflow_id}? 已成功的流程将被整体撤销并通知 LIMS 作废。"
+    )
+    _confirm(prompt)
 
     client = AgentClient()
-    body: dict = {}
+    body: dict = {"scope": scope}
     if reason:
         body["reason"] = reason
 
@@ -151,8 +175,9 @@ def cancel(
         print_result(envelope, code)
 
     d = envelope["data"]
+    label = "归档已取消" if scope == "archive" else "Cancel signal sent"
     console.print(
-        f"[yellow]Cancel signal sent:[/yellow] {d.get('workflow_id')} "
+        f"[yellow]{label}:[/yellow] {d.get('workflow_id')} "
         f"(状态更新需数秒,可用 nfctl status 确认)"
     )
     sys.exit(code)

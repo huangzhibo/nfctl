@@ -177,6 +177,7 @@ _STATUS_COLORS: dict[str, str] = {
     "failed": "red",
     "cancelled": "dim",
     # 对外展示状态(display_status)：颜色本身隐含"要不要关注"
+    "queued": "yellow",  # 已受理,等待队列空出后自动启动(per-pipeline 并发挂起)
     "post_processing": "blue",
     "archive_pending": "cyan",
     "completed": "green",

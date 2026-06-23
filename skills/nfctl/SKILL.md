@@ -66,6 +66,7 @@ description: "用 nfctl CLI 投递、查询、诊断 Nextflow 工作流（nf-ser
   - **main 阶段**：Nextflow 主流程本身，字段 `main_status`，取值 `running / succeeded / failed / cancelled`
   - **post-process 阶段**：主流程结束后的后处理（归档/入库等），字段 `pp_status`（取值 `not_started / running / succeeded / failed / cancelled / skipped`）+ `pp_phase`（取值 `migrate / archive_wait / archive`）
   - `status` 是 `main_status` 的别名，**只反映 main 阶段**。当 `status=succeeded` 时 post-process 可能仍在 `pp_status=running`；判断"流程真正完结"必须同时看 `pp_status`。
+- **`display_status`（对外统一展示状态，server 派生）**：`list`/`status` 的 Status 列展示的就是它，把 main/pp 两段折叠成一个面向用户的状态，**展示首选此字段**。取值：`queued`（已受理未启动，含并发挂起）/ `running`（main 在跑）/ `post_processing`（归档/迁移中）/ `archive_pending`（等待归档延迟到期，`archive_eta` 给到期时间）/ `completed`（含后处理全部完成）/ `archive_failed`（分析成功结果可用、仅归档失败，运维介入）/ `failed`（main 失败，需 resume 重跑）/ `cancelled`。配套 `needs_action`（是否需人介入）、`status_summary`（一句话）。
 - **Project SN / Data Number**：`project_sn` 是 LIMS 项目编号，`data_number` 是项目下的数据编号（更细一层）；两者均可用于 `list` 过滤（`-S` / `-D`），`-q` 搜索范围也覆盖 `data_number`。
 
 ### 资源关系
@@ -96,7 +97,9 @@ resources WORKFLOW_ID [--exclude-cached]
 # 管理
 submit    LAUNCH_DIR -p PIPELINE -S PROJECT_SN [-e ENV][--dry-run]   # -S 必填
 resume    WORKFLOW_ID
-cancel    WORKFLOW_ID [-r REASON]
+cancel    WORKFLOW_ID [-r REASON][--scope workflow|archive]
+          # 默认 scope=workflow：整体撤销，可取消 running 或 succeeded 的流程，终态置 cancelled 并把作废重推 LIMS
+          # scope=archive：仅取消后处理/归档，保留分析结果（LIMS 仍 100%）
 delete    WORKFLOW_ID                    # 仅 failed/cancelled 可删；succeeded 视为合规资产，硬阻止
 
 # 配置
@@ -173,9 +176,10 @@ nfctl -f json resources <workflow_id> --exclude-cached
 
 ### 批量投递（并发边界）
 
-- 投递前看 `pipeline list` 的 `max_concurrent`；看 `overview` 的 `queue_waiting / queue_waiting_limit`
-- `queue_waiting` 接近 `queue_waiting_limit` 时 **停止投递**，等回落
-- 批量投递 = 逐个 `submit`（无 `submit-batch` 命令）；控制节奏靠 Agent 自己，服务端不会自动排队超限拒绝
+- 并发控制下沉到 per-pipeline `max_concurrent`（见 `pipeline list`）；**全局队列阈值已退役**，`overview` 的 `queue_waiting` 仅作 SGE 等待数监控，无上限字段
+- **submit 不再因并发满拒绝**：达到该 pipeline 的 `max_concurrent` 时，新投递照常受理（202），但挂起等待空位，`display_status=queued`，有空位后由服务端自动启动 → 无需 Agent 自己限流；放心逐个投
+- 想看哪些在排队：`list` 看 `display_status=queued`（已受理未启动）vs `running`（已启动在跑）
+- 批量投递 = 逐个 `submit`（无 `submit-batch` 命令）
 - 部分失败时，成功的 workflow_id 已落库，可用 `list --status failed` 收集、`resume` 或 `delete` 后重投
 
 ## 何时读 references/
