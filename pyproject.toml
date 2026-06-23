@@ -1,6 +1,6 @@
 [project]
 name = "nfctl"
-version = "0.7.0"
+version = "0.8.0"
 description = "nf-server CLI — 面向生信工程师和 AI Agent 的命令行工具"
 readme = "README.md"
 license = "MIT"
