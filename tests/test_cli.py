@@ -1114,8 +1114,26 @@ class TestCancel:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_cancel_archive_scope(self, mock_client_class):
-        """--scope archive 只取消归档,保留分析结果。"""
+    def test_cancel_scope_option_removed(self, mock_client_class):
+        """--scope 已从 cancel 硬切掉(归档取消收拢进 nfctl archive cancel)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "cancel", "wf-001", "--scope", "archive"]
+        )
+
+        assert result.exit_code == 2
+        mock_client.request.assert_not_called()
+
+
+class TestArchiveCancel:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_cancel_sends_archive_scope(self, mock_client_class):
+        """archive cancel = cancel scope=archive(保留分析结果,不动 main、不推 LIMS)。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -1124,29 +1142,172 @@ class TestCancel:
         )
         mock_client_class.return_value = mock_client
 
-        result = runner.invoke(
-            app, ["--format", "json", "cancel", "wf-001", "--scope", "archive"]
-        )
+        result = runner.invoke(app, ["--format", "json", "archive", "cancel", "wf-001"])
 
         assert result.exit_code == 0
+        url = mock_client.request.call_args.args[1]
+        assert url.endswith("/workflow/wf-001/cancel")
         body = mock_client.request.call_args.kwargs["json"]
         assert body["scope"] == "archive"
 
+
+class TestArchiveRestore:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_cancel_invalid_scope_rejected(self, mock_client_class):
-        """非法 scope 在 CLI 层拦截,不发请求。"""
+    def test_archive_restore_hits_endpoint(self, mock_client_class):
+        """archive restore 走 POST /archive/restore,不带 --wait 时直接返回。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"workflow_id": "wf-001", "job_id": "7001"}
+        )
         mock_client_class.return_value = mock_client
 
         result = runner.invoke(
-            app, ["--format", "json", "cancel", "wf-001", "--scope", "bogus"]
+            app, ["--format", "json", "archive", "restore", "wf-001"]
         )
 
-        assert result.exit_code == 2
-        mock_client.request.assert_not_called()
+        assert result.exit_code == 0
+        url = mock_client.request.call_args.args[1]
+        assert url.endswith("/workflow/wf-001/archive/restore")
+        payload = json.loads(result.output)
+        assert payload["data"]["job_id"] == "7001"
+
+    @pytest.mark.unit
+    @patch("nfctl.commands.archive.time.sleep")
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_restore_wait_polls_until_done(self, mock_client_class, _sleep):
+        """--wait 轮询 GET 状态直到 done(大归档解压可达小时级,状态读时探测)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(200, {"workflow_id": "wf-001", "job_id": "7001"}),
+            _mock_response(
+                200, {"workflow_id": "wf-001", "job_id": "7001", "status": "running"}
+            ),
+            _mock_response(
+                200, {"workflow_id": "wf-001", "job_id": "7001", "status": "done"}
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "archive", "restore", "wf-001", "--wait"]
+        )
+
+        assert result.exit_code == 0
+        assert mock_client.request.call_count == 3
+        payload = json.loads(result.output)
+        assert payload["data"]["status"] == "done"
+
+    @pytest.mark.unit
+    @patch("nfctl.commands.archive.time.sleep")
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_restore_wait_fails_on_failed(self, mock_client_class, _sleep):
+        """--wait 轮询到 failed → 非零退出。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(200, {"workflow_id": "wf-001", "job_id": "7001"}),
+            _mock_response(
+                200,
+                {
+                    "workflow_id": "wf-001",
+                    "job_id": "7001",
+                    "status": "failed",
+                    "detail": "退出码: 2",
+                },
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["--format", "json", "archive", "restore", "wf-001", "--wait"]
+        )
+
+        assert result.exit_code == 1
+
+
+class TestArchiveStatus:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_status_merges_detail_and_restore(self, mock_client_class):
+        """archive status 汇总 detail 的归档字段 + restore 探测状态。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "workflow_id": "wf-001",
+                    "display_status": "completed",
+                    "status_summary": "全部完成，结果可用",
+                    "pp_phase": "archive",
+                    "pp_status": "succeeded",
+                    "archive_eta": None,
+                    "archive_path": "/archive/pipe/202607/proj/run1",
+                },
+            ),
+            _mock_response(
+                200,
+                {"workflow_id": "wf-001", "job_id": "7001", "status": "done"},
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "archive", "status", "wf-001"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)["data"]
+        assert data["archive_path"] == "/archive/pipe/202607/proj/run1"
+        assert data["restore"]["status"] == "done"
+
+
+class TestArchiveResume:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_resume_hits_archive_endpoint(self, mock_client_class):
+        """archive resume 走 /archive/resume 子资源,与主流程 resume 分开。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"workflow_id": "wf-001"}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "archive", "resume", "wf-001"])
+
+        assert result.exit_code == 0
+        url = mock_client.request.call_args.args[1]
+        assert url.endswith("/workflow/wf-001/archive/resume")
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_resume_400_passes_hint_through(self, mock_client_class):
+        """主流程未成功时 server 400 + hint 指回 resume,原样透传给用户。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            400,
+            {
+                "detail": "主流程未成功(failed/cancelled),不存在可恢复的归档;重跑主流程请用 resume",
+                "error_code": "RESUME_REJECTED",
+                "hint": "POST /workflow/{workflow_id}/resume",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "archive", "resume", "wf-001"])
+
+        assert result.exit_code != 0
+        payload = json.loads(result.output)
+        assert payload["error"]["hint"] == "POST /workflow/{workflow_id}/resume"
 
 
 class TestPipeline:
