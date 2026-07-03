@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/huangzhibo/nfctl/compare/v0.9.0...v0.10.0) (2026-07-03)
+
+
+### 新功能
+
+* **list:** -s 按展示状态 display_status 过滤,与 Status 列同口径 ([212fc54](https://github.com/huangzhibo/nfctl/commit/212fc540accb3dd45f99052eb970eda06e7380e0))
+
 ## [0.9.0](https://github.com/huangzhibo/nfctl/compare/v0.8.0...v0.9.0) (2026-06-23)
 
 
