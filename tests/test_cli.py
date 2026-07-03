@@ -168,6 +168,71 @@ class TestList:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
+    def test_list_status_filter_sent_as_display_status(self, mock_client_class):
+        """-s 透传 server 的 display_status 参数(与 Status 列同口径),
+        不再发只过滤 main_status 的弃用 status 参数。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"total": 0, "page": 1, "page_size": 20, "items": []}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["list", "-s", "cancelled"])
+
+        assert result.exit_code == 0
+        sent_params = mock_client.request.call_args.kwargs["params"]
+        assert sent_params["display_status"] == "cancelled"
+        assert "status" not in sent_params
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_status_filter_local_fallback_for_old_server(self, mock_client_class):
+        """旧 server 忽略 display_status 参数(返回未过滤结果)时,
+        对返回条目按同口径本地过滤兜底,并提示降级。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "total": 2,
+                "page": 1,
+                "page_size": 20,
+                "items": [
+                    {
+                        "workflow_id": "wf-keep",
+                        "status": "succeeded",
+                        "display_status": "cancelled",  # 归档已取消
+                        "progress_percent": 100.0,
+                        "pipeline_name": "WGS",
+                        "env": "prod",
+                        "updated_at": "2026-07-04T10:00:00",
+                    },
+                    {
+                        "workflow_id": "wf-drop",
+                        "status": "succeeded",
+                        "display_status": "completed",
+                        "progress_percent": 100.0,
+                        "pipeline_name": "WGS",
+                        "env": "prod",
+                        "updated_at": "2026-07-04T10:00:00",
+                    },
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["list", "-s", "cancelled"])
+
+        assert result.exit_code == 0
+        assert "wf-keep" in result.output
+        assert "wf-drop" not in result.output
+        assert "本地过滤" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
     def test_list_falls_back_to_main_status_for_old_server(self, mock_client_class):
         """旧 server 无 display_status 时回退到 main_status,不留空。"""
         mock_client = MagicMock()
