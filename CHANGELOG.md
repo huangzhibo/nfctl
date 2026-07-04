@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0](https://github.com/huangzhibo/nfctl/compare/v0.10.0...v1.0.0) (2026-07-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* 仅兼容 nf-server >=3.0;CLI 契约就此稳定,发布 1.0.0。
+
+### 新功能
+
+* **archive:** archive 命令组补全(restore/status/cancel),cancel 硬切 --scope ([fd19914](https://github.com/huangzhibo/nfctl/commit/fd199149590ba1ceb9b4a44274efb5d864d83ae7))
+* **cli:** archive now 命令,跳过归档等待期立即归档 ([547275b](https://github.com/huangzhibo/nfctl/commit/547275b6810aa4b956e31bacc5e6d31c9f889d14))
+* **cli:** overview 显示 reconciler 存活(读 /health 心跳判定) ([80c9807](https://github.com/huangzhibo/nfctl/commit/80c9807d0daef8ac8ac60b7bfb76bc6e92d1d9ca))
+* **cli:** 对齐 nf-server 状态契约,list 加 Archive 列与 --pp 过滤 ([e968fab](https://github.com/huangzhibo/nfctl/commit/e968fab5f9bb2c8d82061cffa0ef20e98134b0b5))
+* **cli:** 版本握手——请求带 nfctl UA,426 升级指引,新版软提醒 ([2d7466b](https://github.com/huangzhibo/nfctl/commit/2d7466be389a04cddaf0fb7d91bdccd63a9e1b55))
+* 对齐 nf-server 3.0 契约清仓——validate 直读 workflow_id,移除旧 server 容错 ([a11fc1a](https://github.com/huangzhibo/nfctl/commit/a11fc1a84ff6671ccd47fdbfee80d9c583d76925))
+
 ## [0.10.0](https://github.com/huangzhibo/nfctl/compare/v0.9.0...v0.10.0) (2026-07-03)
 
 
