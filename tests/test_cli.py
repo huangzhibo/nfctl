@@ -131,8 +131,8 @@ class TestList:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_list_table_shows_display_status(self, mock_client_class):
-        """Status 列展示 server 派生的 display_status,而非原始 main_status。"""
+    def test_list_table_shows_two_axes(self, mock_client_class):
+        """Status 列展示分析轴 analysis_status,Archive 列展示归档轴。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -145,8 +145,9 @@ class TestList:
                 "items": [
                     {
                         "workflow_id": "wf-001",
-                        "status": "succeeded",
-                        "display_status": "archive_pending",
+                        "analysis_status": "succeeded",
+                        "pp_status": "running",
+                        "pp_phase": "archive_wait",
                         "needs_action": False,
                         "progress_percent": 100.0,
                         "pipeline_name": "WGS",
@@ -158,83 +159,18 @@ class TestList:
         )
         mock_client_class.return_value = mock_client
 
-        result = runner.invoke(app, ["list"])
+        # 放宽终端宽度,避免 Rich 表格截断待断言的列值
+        result = runner.invoke(app, ["list"], env={"COLUMNS": "200"})
 
         assert result.exit_code == 0
-        # Status 列改用 display_status(表格列宽可能截断长值,故断言前缀);
-        # 同时确认不再展示原始 main_status。
-        assert "archive" in result.output
-        assert "succeeded" not in result.output
+        assert "succeeded" in result.output
+        # 归档轴推进中显示阶段
+        assert "archive_wait" in result.output
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_list_status_filter_sent_as_display_status(self, mock_client_class):
-        """-s 透传 server 的 display_status 参数(与 Status 列同口径),
-        不再发只过滤 main_status 的弃用 status 参数。"""
-        mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.request.return_value = _mock_response(
-            200, {"total": 0, "page": 1, "page_size": 20, "items": []}
-        )
-        mock_client_class.return_value = mock_client
-
-        result = runner.invoke(app, ["list", "-s", "cancelled"])
-
-        assert result.exit_code == 0
-        sent_params = mock_client.request.call_args.kwargs["params"]
-        assert sent_params["display_status"] == "cancelled"
-        assert "status" not in sent_params
-
-    @pytest.mark.unit
-    @patch("nfctl.client.httpx.Client")
-    def test_list_status_filter_local_fallback_for_old_server(self, mock_client_class):
-        """旧 server 忽略 display_status 参数(返回未过滤结果)时,
-        对返回条目按同口径本地过滤兜底,并提示降级。"""
-        mock_client = MagicMock()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        mock_client.request.return_value = _mock_response(
-            200,
-            {
-                "total": 2,
-                "page": 1,
-                "page_size": 20,
-                "items": [
-                    {
-                        "workflow_id": "wf-keep",
-                        "status": "succeeded",
-                        "display_status": "cancelled",  # 归档已取消
-                        "progress_percent": 100.0,
-                        "pipeline_name": "WGS",
-                        "env": "prod",
-                        "updated_at": "2026-07-04T10:00:00",
-                    },
-                    {
-                        "workflow_id": "wf-drop",
-                        "status": "succeeded",
-                        "display_status": "completed",
-                        "progress_percent": 100.0,
-                        "pipeline_name": "WGS",
-                        "env": "prod",
-                        "updated_at": "2026-07-04T10:00:00",
-                    },
-                ],
-            },
-        )
-        mock_client_class.return_value = mock_client
-
-        result = runner.invoke(app, ["list", "-s", "cancelled"])
-
-        assert result.exit_code == 0
-        assert "wf-keep" in result.output
-        assert "wf-drop" not in result.output
-        assert "本地过滤" in result.output
-
-    @pytest.mark.unit
-    @patch("nfctl.client.httpx.Client")
-    def test_list_falls_back_to_main_status_for_old_server(self, mock_client_class):
-        """旧 server 无 display_status 时回退到 main_status,不留空。"""
+    def test_list_archive_column_shows_terminal_pp_status(self, mock_client_class):
+        """归档轴终态(failed/cancelled/skipped)时 Archive 列显示 pp_status。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -247,8 +183,11 @@ class TestList:
                 "items": [
                     {
                         "workflow_id": "wf-001",
-                        "status": "running",
-                        "progress_percent": 45.0,
+                        "analysis_status": "succeeded",
+                        "pp_status": "failed",
+                        "pp_phase": "archive",
+                        "needs_action": True,
+                        "progress_percent": 100.0,
                         "pipeline_name": "WGS",
                         "env": "prod",
                         "updated_at": "2026-04-13T10:00:00",
@@ -258,10 +197,33 @@ class TestList:
         )
         mock_client_class.return_value = mock_client
 
-        result = runner.invoke(app, ["list"])
+        # 放宽终端宽度,避免 Rich 表格截断待断言的列值
+        result = runner.invoke(app, ["list"], env={"COLUMNS": "200"})
 
         assert result.exit_code == 0
-        assert "running" in result.output
+        assert "succeeded" in result.output
+        assert "failed" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_filters_sent_as_two_axis_params(self, mock_client_class):
+        """-s 透传 analysis_status,--pp 透传 pp_status(与表格两列同口径)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"total": 0, "page": 1, "page_size": 20, "items": []}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["list", "-s", "queued,running", "--pp", "failed"])
+
+        assert result.exit_code == 0
+        sent_params = mock_client.request.call_args.kwargs["params"]
+        assert sent_params["analysis_status"] == "queued,running"
+        assert sent_params["pp_status"] == "failed"
+        assert "status" not in sent_params
+        assert "display_status" not in sent_params
 
 
 class TestStatus:
@@ -275,13 +237,13 @@ class TestStatus:
             200,
             {
                 "workflow_id": "wf-001",
-                "status": "failed",
+                "analysis_status": "failed",
                 "progress_percent": 80.0,
                 "pipeline_name": "WGS",
                 "env": "prod",
                 "launch_dir": "/data/wf-001",
                 "run_name": "run1",
-                "sge_job_id": "12345",
+                "job_id": "12345",
                 "error_message": "Process failed",
                 "error_report": "FATAL: process FASTQC failed\nexit code 137",
             },
@@ -322,7 +284,7 @@ class TestStatus:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_status_shows_derived_fields(self, mock_client_class):
-        """详情展示 display_status + summary + archive_eta（等待归档场景）。"""
+        """详情展示 analysis_status + summary + archive_eligible_after（等待归档场景）。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -330,11 +292,10 @@ class TestStatus:
             200,
             {
                 "workflow_id": "wf-001",
-                "status": "succeeded",
-                "display_status": "archive_pending",
+                "analysis_status": "succeeded",
                 "status_summary": "等待归档（约 9h 后自动开始）",
                 "needs_action": False,
-                "archive_eta": "2026-06-18T04:43:16+00:00",
+                "archive_eligible_after": "2026-06-18T04:43:16+00:00",
                 "pp_phase": "archive_wait",
                 "pp_status": "running",
                 "progress_percent": 100.0,
@@ -345,10 +306,10 @@ class TestStatus:
         result = runner.invoke(app, ["status", "wf-001"])
 
         assert result.exit_code == 0
-        assert "archive_pending" in result.output
+        assert "succeeded" in result.output
         assert "summary" in result.output
         assert "等待归档" in result.output
-        assert "archive_eta" in result.output
+        assert "archive_eligible_after" in result.output
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
@@ -361,9 +322,8 @@ class TestStatus:
             200,
             {
                 "workflow_id": "wf-001",
-                "status": "succeeded",
-                "display_status": "archive_failed",
-                "status_summary": "分析成功、结果可用；归档失败，可 resume 重试",
+                "analysis_status": "succeeded",
+                "status_summary": "分析成功、结果可用；归档失败，可 archive resume 重试",
                 "needs_action": True,
                 "pp_phase": "archive",
                 "pp_status": "failed",
@@ -375,9 +335,10 @@ class TestStatus:
         result = runner.invoke(app, ["status", "wf-001"])
 
         assert result.exit_code == 0
-        assert "archive_failed" in result.output
         assert "needs_action" in result.output
         assert "需介入" in result.output
+        # 归档轴处境由 pp 行表达(archive (failed))
+        assert "archive (failed)" in result.output
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
@@ -803,15 +764,18 @@ class TestSubmitProjectSn:
 class TestDelete:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_delete_succeeded_is_blocked(self, mock_client_class):
-        """succeeded 工作流不可删除（CLI 层硬阻止），不应触发 DELETE。"""
+    def test_delete_succeeded_rejected_by_server(self, mock_client_class):
+        """succeeded 不可删的合规守卫已下沉 server:CLI 直发 DELETE,透传 400。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        # 仅返回一次：GET /workflow/{id}
         mock_client.request.return_value = _mock_response(
-            200,
-            {"workflow_id": "wf-ok", "status": "succeeded"},
+            400,
+            {
+                "detail": "已成功完成的工作流不可删除（成功结果视为合规资产）",
+                "error_code": "VALIDATION_ERROR",
+                "resource_id": "wf-ok",
+            },
         )
         mock_client_class.return_value = mock_client
 
@@ -821,22 +785,21 @@ class TestDelete:
         data = json.loads(result.output)
         assert data["ok"] is False
         assert data["error"]["type"] == "VALIDATION_ERROR"
-        assert "成功" in data["error"]["message"]
-        assert data["error"]["resource_id"] == "wf-ok"
-        # 只调用了 GET，没有 DELETE
+        assert "不可删除" in data["error"]["message"]
+        # 不再有 CLI 预查 GET,唯一请求就是 DELETE
         assert mock_client.request.call_count == 1
-        assert mock_client.request.call_args.args[0] == "GET"
+        assert mock_client.request.call_args.args[0] == "DELETE"
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_delete_failed_proceeds(self, mock_client_class):
-        """failed/cancelled 等其他终态可正常删除。"""
+        """failed/cancelled 等其他终态可正常删除(单次 DELETE,无预查)。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        get_resp = _mock_response(200, {"workflow_id": "wf-bad", "status": "failed"})
-        del_resp = _mock_response(200, {"workflow_id": "wf-bad", "deleted": True})
-        mock_client.request.side_effect = [get_resp, del_resp]
+        mock_client.request.return_value = _mock_response(
+            200, {"workflow_id": "wf-bad", "deleted": True}
+        )
         mock_client_class.return_value = mock_client
 
         result = runner.invoke(app, ["--format", "json", "delete", "wf-bad"])
@@ -845,17 +808,16 @@ class TestDelete:
         data = json.loads(result.output)
         assert data["ok"] is True
         assert data["data"]["deleted"] is True
-        # 第二次调用是 DELETE
-        assert mock_client.request.call_count == 2
-        assert mock_client.request.call_args_list[1].args == (
+        assert mock_client.request.call_count == 1
+        assert mock_client.request.call_args.args == (
             "DELETE",
             "/workflow/wf-bad",
         )
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_delete_get_404_passes_through(self, mock_client_class):
-        """GET 拿不到的工作流（404）应直接返回错误，不进行 DELETE。"""
+    def test_delete_404_passes_through(self, mock_client_class):
+        """不存在的工作流:DELETE 404 直接透传为错误。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -1244,11 +1206,11 @@ class TestArchiveStatus:
                 200,
                 {
                     "workflow_id": "wf-001",
-                    "display_status": "completed",
+                    "analysis_status": "succeeded",
                     "status_summary": "全部完成，结果可用",
                     "pp_phase": "archive",
                     "pp_status": "succeeded",
-                    "archive_eta": None,
+                    "archive_eligible_after": None,
                     "archive_path": "/archive/pipe/202607/proj/run1",
                 },
             ),

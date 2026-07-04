@@ -114,11 +114,11 @@ def status(
                 "ok": True,
                 "data": {
                     "workflow_id": workflow_id,
-                    "display_status": d.get("display_status"),
+                    "analysis_status": d.get("analysis_status"),
                     "status_summary": d.get("status_summary"),
                     "pp_phase": d.get("pp_phase"),
                     "pp_status": d.get("pp_status"),
-                    "archive_eta": d.get("archive_eta"),
+                    "archive_eligible_after": d.get("archive_eligible_after"),
                     "archive_path": d.get("archive_path"),
                     "restore": r,
                 },
@@ -128,13 +128,15 @@ def status(
 
     items: list[tuple[str, object]] = [
         ("workflow_id", workflow_id),
-        ("display_status", d.get("display_status")),
+        ("analysis_status", d.get("analysis_status")),
         ("summary", d.get("status_summary")),
     ]
     if d.get("pp_phase"):
         items.append(("pp", f"{d['pp_phase']} ({d.get('pp_status')})"))
-    if d.get("archive_eta"):
-        items.append(("archive_eta", format_local_time(d["archive_eta"])))
+    if d.get("archive_eligible_after"):
+        items.append(
+            ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
+        )
     items.append(("archive_path", d.get("archive_path") or "-"))
     items.append(("restore_job", r.get("job_id") or "-"))
     items.append(("restore_status", r.get("status")))

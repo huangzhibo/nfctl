@@ -56,7 +56,15 @@ def list_workflows(
         None,
         "--status",
         "-s",
-        help="状态过滤（逗号分隔）。按展示状态 display_status 匹配,与表格 Status 列同口径",
+        help=(
+            "分析状态过滤（逗号分隔:queued|running|succeeded|failed|cancelled）,"
+            "与 Status 列同口径"
+        ),
+    ),
+    pp: str | None = typer.Option(
+        None,
+        "--pp",
+        help="归档/后处理状态过滤（逗号分隔:not_started|running|succeeded|failed|cancelled|skipped）",
     ),
     pipeline_name: str | None = typer.Option(
         None, "--pipeline", "-p", help="Pipeline 过滤"
@@ -82,10 +90,10 @@ def list_workflows(
     """工作流列表"""
     client = AgentClient()
     params = {
-        # 按展示状态过滤(server 端 SQL 谓词,与 Status 列同口径)。曾透传弃用的
-        # status 参数(只过滤 main_status):表格显示 display_status,"归档已取消"
-        # 的行显示 cancelled 却过滤不出来——显示与过滤必须同字段。
-        "display_status": status,
+        # 两轴过滤,与表格 Status/Archive 列同口径(server 端 SQL 谓词,
+        # 见 nf-server ADR-0006):显示与过滤必须同字段。
+        "analysis_status": status,
+        "pp_status": pp,
         "pipeline_name": pipeline_name,
         "env": env,
         "project_sn": project_sn,
@@ -125,25 +133,6 @@ def list_workflows(
     else:
         envelope, code = client.get("/workflow/list", page=page, **params)
 
-    # 旧 server 兜底:不认识 display_status 参数的 server 会静默忽略它(退化成
-    # 未过滤),对返回条目按同口径本地过滤一把,保证新 CLI 配旧 server 行为不错乱。
-    # 新 server 已在 SQL 层过滤,此处恒为 no-op;真发生本地过滤时 total 是
-    # 服务端未过滤总数,翻页语义降级,提示用户升级 server。
-    if status and envelope.get("ok"):
-        wanted = {s.strip() for s in status.split(",") if s.strip()}
-        raw_items = envelope["data"].get("items", [])
-        kept = [
-            it
-            for it in raw_items
-            if (it.get("display_status") or it.get("status")) in wanted
-        ]
-        if len(kept) != len(raw_items):
-            envelope["data"]["items"] = kept
-            err_console.print(
-                f"[dim]server 未按 display_status 过滤(旧版本?),已本地过滤当前结果 "
-                f"{len(raw_items)}→{len(kept)} 条;total 为未过滤总数[/dim]"
-            )
-
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
 
@@ -156,15 +145,21 @@ def list_workflows(
         # env 为空表示内部流程,不向 LIMS 推送进度
         if not item.get("env"):
             item["env"] = "internal"
-        # 对外统一展示状态(server 派生);旧 server 无此字段时回退 main_status
-        item["display_status"] = item.get("display_status") or item.get("status")
+        # 归档轴列:推进中显示阶段(migrate/archive_wait/archive),终态显示
+        # pp_status(succeeded/failed/cancelled/skipped),未开始显示 -
+        pp_status_value = item.get("pp_status")
+        if pp_status_value in ("not_started", "running"):
+            item["archive"] = item.get("pp_phase") or "-"
+        else:
+            item["archive"] = pp_status_value or "-"
 
     print_table(
         "Workflow 列表",
         [
             ("workflow_id", "ID"),
-            ("display_status", "Status"),
+            ("analysis_status", "Status"),
             ("progress_percent", "Progress"),
+            ("archive", "Archive"),
             ("pipeline_name", "Pipeline"),
             ("env", "Env"),
             ("project_sn", "ProjectSN"),
@@ -188,8 +183,8 @@ def status(
     d = envelope["data"]
     items = [
         ("workflow_id", d.get("workflow_id")),
-        # 对外统一展示状态(server 派生);旧 server 无此字段时回退 main_status
-        ("status", d.get("display_status") or d.get("status")),
+        # 分析轴状态(server 派生的 analysis_status,含 queued)
+        ("status", d.get("analysis_status")),
         ("summary", d.get("status_summary")),
         ("progress", f"{d.get('progress_percent', 0):.1f}%"),
         ("pipeline", d.get("pipeline_name")),
@@ -197,12 +192,8 @@ def status(
         ("env", d.get("env") or "internal"),
         ("launch_dir", d.get("launch_dir")),
         ("run_name", d.get("run_name")),
-        # 真源字段 job_id;回退 sge_job_id 兼容旧 server 的过渡别名
-        ("job_id", d.get("job_id") or d.get("sge_job_id")),
+        ("job_id", d.get("job_id")),
     ]
-    # summary 为空(旧 server)时去掉该行,避免显示 "summary  -"
-    if not d.get("status_summary"):
-        items = [it for it in items if it[0] != "summary"]
     # 需人介入(失败/归档失败)时醒目标记
     if d.get("needs_action"):
         idx = next((i for i, it in enumerate(items) if it[0] == "status"), 0)
@@ -218,9 +209,11 @@ def status(
         if d.get("pp_status"):
             pp = f"{pp} ({d['pp_status']})"
         items.append(("post_process", pp))
-    # 等待归档时显示预计自动开始时间(server 派生的 archive_eta)
-    if d.get("archive_eta"):
-        items.append(("archive_eta", format_local_time(d["archive_eta"])))
+    # 等待归档时显示到期自动开始时间(原始字段直出)
+    if d.get("archive_eligible_after"):
+        items.append(
+            ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
+        )
     if d.get("error_message"):
         items.append(("error", d["error_message"]))
     if d.get("duration"):

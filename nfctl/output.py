@@ -169,19 +169,21 @@ def print_kv(title: str, items: list[tuple[str, Any]]) -> None:
         console.print(f"  {key:<{max_key}}  {cell}")
 
 
-# 状态颜色映射
+# 状态颜色映射(analysis_status / pp_status / pp_phase / restore 探测值共用,
+# 颜色本身隐含"要不要关注")
 _STATUS_COLORS: dict[str, str] = {
     "running": "blue",
     "pending": "yellow",
+    "queued": "yellow",  # 已受理,等待队列空出后自动启动(per-pipeline 并发挂起)
     "succeeded": "green",
+    "done": "green",  # archive restore 探测结果
     "failed": "red",
     "cancelled": "dim",
-    # 对外展示状态(display_status)：颜色本身隐含"要不要关注"
-    "queued": "yellow",  # 已受理,等待队列空出后自动启动(per-pipeline 并发挂起)
-    "post_processing": "blue",
-    "archive_pending": "cyan",
-    "completed": "green",
-    "archive_failed": "yellow",  # 分析成功结果可用,仅归档失败
+    "skipped": "dim",
+    # 归档轴阶段(pp_phase)
+    "migrate": "blue",
+    "archive": "blue",
+    "archive_wait": "cyan",
 }
 
 
