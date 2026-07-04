@@ -50,9 +50,8 @@ def _do_validate(
             EXIT_VALIDATION,
         )
 
-    # 从 validate 响应提取 workflow_id（detail 格式："TOWER_WORKFLOW_ID=xxx"）
-    wf_id_detail = val_data.get("checks", {}).get("workflow_id", {}).get("detail", "")
-    workflow_id = wf_id_detail.split("=", 1)[1] if "=" in wf_id_detail else ""
+    # workflow_id 是 validate 响应的一等字段(3.0 起;曾要解析 check detail 字符串)
+    workflow_id = val_data.get("workflow_id") or ""
 
     if not workflow_id:
         print_result(

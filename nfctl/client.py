@@ -5,13 +5,13 @@ HTTP 客户端
 
 ## 错误信封规范
 
-nf-server 升级后错误响应顶层扁平:
+nf-server 错误响应顶层扁平:
     {
         "detail": "人类可读消息",
-        "error_code": "CONFLICT|NOT_FOUND|TEMPORAL_UNAVAILABLE|...",
+        "error_code": "CONFLICT|NOT_FOUND|...",
         "hint": "修复建议(可选)",
         "resource_id": "workflow_id 等(可选)",
-        "job_id": "调度器作业 ID(可选,cancel 失败时;旧 server 为 sge_job_id)"
+        "job_id": "调度器作业 ID(可选,cancel 失败时)"
     }
 
 本客户端的错误信封:
@@ -43,12 +43,8 @@ _STATUS_MAP: dict[int, tuple[int, str]] = {
 }
 
 # 服务端 error_code → 退出码;未列出的 error_code 按 HTTP 状态码映射。
-# 优先级高于 _STATUS_MAP,让运维/临时故障类错误走 EXIT_NETWORK 便于脚本自动重试。
+# (Temporal 时代的 *_UNAVAILABLE 等网络类 code 已随 server 去引擎不再发射,条目删除)
 _ERROR_CODE_EXIT: dict[str, int] = {
-    "TEMPORAL_UNAVAILABLE": EXIT_NETWORK,
-    "SERVICE_UNAVAILABLE": EXIT_NETWORK,
-    "GATEWAY_TIMEOUT": EXIT_NETWORK,
-    "UPSTREAM_ERROR": EXIT_NETWORK,
     "CONFLICT": EXIT_CONFLICT,
     "VALIDATION_ERROR": EXIT_VALIDATION,
     "BAD_REQUEST": EXIT_VALIDATION,
@@ -129,7 +125,7 @@ def _error(
 def _handle_http_error(resp: httpx.Response) -> tuple[dict, int]:
     """把 HTTP 错误响应转为 (信封, 退出码)。
 
-    优先读服务端 error_code 决定 error_type 和退出码,兼容历史纯字符串 detail。
+    优先读服务端 error_code 决定 error_type 和退出码。
     """
     default_exit, default_type = _STATUS_MAP.get(
         resp.status_code, (EXIT_SERVER, "SERVER_ERROR")
@@ -151,23 +147,14 @@ def _handle_http_error(resp: httpx.Response) -> tuple[dict, int]:
         _ERROR_CODE_EXIT[error_code] if error_code in _ERROR_CODE_EXIT else default_exit
     )
 
-    # 旧格式 `detail` 可能是 dict({message, hint, ...});新格式是纯字符串。
+    # detail 恒为字符串(旧 server 的 dict-detail / sge_job_id 解析已随硬切删除)
     detail = body.get("detail")
-    if isinstance(detail, dict):
-        message = str(detail.get("message") or detail)
-        legacy_hint = detail.get("hint")
-        # 真源字段 job_id;回退 sge_job_id 兼容旧 server 的过渡别名
-        legacy_job = detail.get("job_id") or detail.get("sge_job_id")
-    else:
-        message = (
-            detail if isinstance(detail, str) and detail else f"HTTP {resp.status_code}"
-        )
-        legacy_hint = None
-        legacy_job = None
-
-    hint = body.get("hint") or legacy_hint
+    message = (
+        detail if isinstance(detail, str) and detail else f"HTTP {resp.status_code}"
+    )
+    hint = body.get("hint")
     resource_id = body.get("resource_id")
-    job_id = body.get("job_id") or body.get("sge_job_id") or legacy_job
+    job_id = body.get("job_id")
 
     return _error(
         error_type,
