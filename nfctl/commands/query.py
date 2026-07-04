@@ -16,7 +16,7 @@ from nfctl.output import (
 
 
 def overview() -> None:
-    """系统概览：运行/待机/成功/失败统计"""
+    """系统概览：运行/待机/成功/失败统计 + reconciler 存活"""
     client = AgentClient()
     envelope, code = client.get("/stats/overview")
 
@@ -24,18 +24,31 @@ def overview() -> None:
         print_result(envelope, code)
 
     data = envelope["data"]
-    print_kv(
-        "Workflow 概览",
-        [
-            ("running", data.get("running", 0)),
-            ("succeeded", data.get("succeeded", 0)),
-            ("failed", data.get("failed", 0)),
-            ("cancelled", data.get("cancelled", 0)),
-            ("total", data.get("total", 0)),
-            # SGE 当前等待数(纯监控);全局阈值已退役,并发控制下沉到 per-pipeline max_concurrent
-            ("queue_waiting", data.get("queue_waiting", 0)),
-        ],
-    )
+    items: list[tuple[str, object]] = [
+        ("running", data.get("running", 0)),
+        ("succeeded", data.get("succeeded", 0)),
+        ("failed", data.get("failed", 0)),
+        ("cancelled", data.get("cancelled", 0)),
+        ("total", data.get("total", 0)),
+        # SGE 当前等待数(纯监控);全局阈值已退役,并发控制下沉到 per-pipeline max_concurrent
+        ("queue_waiting", data.get("queue_waiting", 0)),
+    ]
+
+    # reconciler 存活(server /health 心跳判定):陈旧 = 一切推进停止,必须醒目
+    health_env, _ = client.get("/health")
+    if health_env.get("ok"):
+        rec = health_env["data"].get("reconciler") or {}
+        if rec.get("alive") is not None:
+            items.append(
+                (
+                    "reconciler",
+                    "[green]alive[/green]"
+                    if rec["alive"]
+                    else "[red]未在推进(daemon 死/卡死/DB 不可写,查 daemon 日志)[/red]",
+                )
+            )
+
+    print_kv("Workflow 概览", items)
 
     pipelines = data.get("by_pipeline", [])
     if pipelines:

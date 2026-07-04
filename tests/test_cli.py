@@ -94,6 +94,53 @@ class TestOverview:
         assert result.exit_code == 0
         assert "running" in result.output.lower()
 
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    @pytest.mark.parametrize(
+        "alive,fragment",
+        [(True, "alive"), (False, "未在推进")],
+    )
+    def test_overview_shows_reconciler_liveness(
+        self, mock_client_class, alive, fragment
+    ):
+        """overview 附带 /health 的 reconciler 存活行(陈旧=一切推进停止,须醒目)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "running": 1,
+                    "succeeded": 5,
+                    "failed": 0,
+                    "cancelled": 0,
+                    "total": 6,
+                    "by_pipeline": [],
+                    "queue_waiting": 0,
+                },
+            ),
+            _mock_response(
+                200,
+                {
+                    "status": "healthy" if alive else "degraded",
+                    "database": {"connected": True},
+                    "queue": {},
+                    "reconciler": {
+                        "alive": alive,
+                        "last_tick_at": "2026-07-04T10:00:00+00:00",
+                    },
+                },
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["overview"])
+
+        assert result.exit_code == 0
+        assert "reconciler" in result.output
+        assert fragment in result.output
+
 
 class TestList:
     @pytest.mark.unit
