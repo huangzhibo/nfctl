@@ -19,11 +19,22 @@ nf-server 错误响应顶层扁平:
 其中 type 优先用服务端 error_code,回退到 HTTP 状态码映射。
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from typing import Any
 
 import httpx
 
 from nfctl.config import ConfigError, get_url
+from nfctl.output import err_console
+
+try:
+    _VERSION = _pkg_version("nfctl")
+except PackageNotFoundError:  # 源码直跑未安装：UA 不带版本段，server 端 fail open
+    _VERSION = ""
+
+# 版本握手：server 按此 UA 判定契约兼容性,过旧 426、偏旧回 X-Nfctl-Latest 提醒头
+_USER_AGENT = f"nfctl/{_VERSION}" if _VERSION else "nfctl"
 
 # 退出码(0-4 与 lims2 对齐)
 EXIT_SUCCESS = 0
@@ -40,6 +51,7 @@ _STATUS_MAP: dict[int, tuple[int, str]] = {
     404: (EXIT_VALIDATION, "NOT_FOUND"),
     409: (EXIT_CONFLICT, "CONFLICT"),
     422: (EXIT_VALIDATION, "VALIDATION_ERROR"),
+    426: (EXIT_VALIDATION, "UPGRADE_REQUIRED"),  # server 版本握手:CLI 过旧须升级
 }
 
 # 服务端 error_code → 退出码;未列出的 error_code 按 HTTP 状态码映射。
@@ -49,6 +61,7 @@ _ERROR_CODE_EXIT: dict[str, int] = {
     "VALIDATION_ERROR": EXIT_VALIDATION,
     "BAD_REQUEST": EXIT_VALIDATION,
     "NOT_FOUND": EXIT_VALIDATION,
+    "UPGRADE_REQUIRED": EXIT_VALIDATION,
 }
 
 
@@ -67,7 +80,11 @@ class AgentClient:
             return _error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION
 
         try:
-            with httpx.Client(base_url=base_url, timeout=self._timeout) as client:
+            with httpx.Client(
+                base_url=base_url,
+                timeout=self._timeout,
+                headers={"User-Agent": _USER_AGENT},
+            ) as client:
                 resp = client.request(method, path, **kwargs)
         except httpx.ConnectError:
             return _error(
@@ -77,6 +94,8 @@ class AgentClient:
             ), EXIT_NETWORK
         except httpx.TimeoutException:
             return _error("TIMEOUT", f"请求超时: {base_url}{path}"), EXIT_NETWORK
+
+        _maybe_warn_new_version(resp)
 
         if resp.status_code >= 400:
             envelope, exit_code = _handle_http_error(resp)
@@ -101,6 +120,27 @@ class AgentClient:
 
     def delete(self, path: str) -> tuple[dict, int]:
         return self._request("DELETE", path)
+
+
+_new_version_warned = False
+
+
+def _maybe_warn_new_version(resp: httpx.Response) -> None:
+    """server 回 X-Nfctl-Latest 提醒头（兼容但偏旧）时往 stderr 提示一次。
+
+    stderr 不污染 stdout 的 JSON 输出;进程内只提示一次(restore --wait
+    等轮询场景不刷屏)。
+    """
+    global _new_version_warned
+    if _new_version_warned:
+        return
+    latest = resp.headers.get("x-nfctl-latest")
+    if latest:
+        _new_version_warned = True
+        err_console.print(
+            f"[dim]提示: nfctl 有新版本 {latest}（当前 {_VERSION or '未知'}），"
+            f"可执行 pip install -U nfctl 更新[/dim]"
+        )
 
 
 def _error(

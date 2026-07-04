@@ -16,12 +16,18 @@ from nfctl.main import app
 runner = CliRunner()
 
 
-def _mock_response(status_code: int = 200, json_data: dict | None = None):
-    """构造 mock httpx.Response"""
+def _mock_response(
+    status_code: int = 200,
+    json_data: dict | None = None,
+    headers: dict | None = None,
+):
+    """构造 mock httpx.Response。headers 必须是真 dict:MagicMock 的
+    headers.get() 返回 truthy 的 MagicMock,会误触发版本提醒。"""
     resp = MagicMock()
     resp.status_code = status_code
     resp.json.return_value = json_data or {}
     resp.text = json.dumps(json_data or {})
+    resp.headers = headers or {}
     return resp
 
 
@@ -2020,3 +2026,108 @@ class TestConfig:
         data = json.loads(result.output)["data"]
         assert data["resolved_url"] is None
         assert "resolve_error" in data
+
+
+class TestVersionHandshake:
+    """版本握手:UA 上报、426 升级指引、新版软提醒(响应头)。"""
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_user_agent_sent(self, mock_client_class):
+        """每次请求的 httpx.Client 都带 nfctl UA(server 据此判定契约兼容性)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"items": [], "total": 0}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "list"])
+
+        assert result.exit_code == 0
+        ua = mock_client_class.call_args.kwargs["headers"]["User-Agent"]
+        assert ua.startswith("nfctl")
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_426_upgrade_required(self, mock_client_class):
+        """server 版本握手拒绝(426) → UPGRADE_REQUIRED 信封,detail/hint 直出。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            426,
+            {
+                "detail": "nfctl 版本过旧，与当前 server 契约不兼容（最低要求 1.0.0）",
+                "error_code": "UPGRADE_REQUIRED",
+                "hint": "执行 pip install -U nfctl 升级后重试",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "list"])
+
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "UPGRADE_REQUIRED"
+        assert "版本过旧" in data["error"]["message"]
+        assert "pip install -U nfctl" in data["error"]["hint"]
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_new_version_hint_once(self, mock_client_class, monkeypatch):
+        """X-Nfctl-Latest 提醒头 → stderr 提示;多次请求只提示一次。"""
+        monkeypatch.setattr("nfctl.client._new_version_warned", False)
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        # overview 发两个请求(/stats/overview + /health),都带提醒头
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "running": 0,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "cancelled": 0,
+                    "total": 0,
+                    "by_pipeline": [],
+                    "queue_waiting": 0,
+                },
+                headers={"x-nfctl-latest": "9.9.9"},
+            ),
+            _mock_response(
+                200,
+                {
+                    "status": "healthy",
+                    "reconciler": {"alive": True, "last_tick_at": None},
+                },
+                headers={"x-nfctl-latest": "9.9.9"},
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["overview"])
+
+        assert result.exit_code == 0
+        assert result.output.count("有新版本 9.9.9") == 1
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_no_hint_without_header(self, mock_client_class, monkeypatch):
+        """无提醒头(版本已最新)不输出任何提示。"""
+        monkeypatch.setattr("nfctl.client._new_version_warned", False)
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"items": [], "total": 0}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["list"])
+
+        assert result.exit_code == 0
+        assert "有新版本" not in result.output
