@@ -36,6 +36,24 @@ def resume(
     sys.exit(code)
 
 
+@app.command("now")
+def now(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+) -> None:
+    """跳过归档等待期，立即开始归档（仅"等待归档"阶段可用）"""
+    client = AgentClient()
+    envelope, code = client.post(f"/workflow/{workflow_id}/archive/now")
+
+    if not envelope["ok"] or is_json():
+        print_result(envelope, code)
+
+    console.print(
+        f"[green]Archive now:[/green] {workflow_id} "
+        f"等待期已跳过,将于下个对账周期(约 1 分钟内)开始归档"
+    )
+    sys.exit(code)
+
+
 @app.command("restore")
 def restore(
     workflow_id: str = typer.Argument(help="Workflow ID"),

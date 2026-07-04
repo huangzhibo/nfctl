@@ -1229,6 +1229,53 @@ class TestArchiveStatus:
         assert data["restore"]["status"] == "done"
 
 
+class TestArchiveNow:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_now_hits_endpoint(self, mock_client_class):
+        """archive now 走 /archive/now,跳过归档等待期。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "archive_eligible_after": "2026-07-04T10:00:00+00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "archive", "now", "wf-001"])
+
+        assert result.exit_code == 0
+        url = mock_client.request.call_args.args[1]
+        assert url.endswith("/workflow/wf-001/archive/now")
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_now_wrong_state_passes_error_through(self, mock_client_class):
+        """非 archive_wait 阶段:server 400 定向错误透传。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            400,
+            {
+                "detail": "当前不在归档等待期（pp_phase=migrate），进入 archive_wait 后再调用",
+                "error_code": "VALIDATION_ERROR",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "archive", "now", "wf-001"])
+
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert "归档等待期" in data["error"]["message"]
+
+
 class TestArchiveResume:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
