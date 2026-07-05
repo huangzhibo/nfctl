@@ -366,8 +366,9 @@ class TestStatus:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_status_marks_needs_action(self, mock_client_class):
-        """归档失败需介入时,详情有醒目的 needs_action 标记。"""
+    def test_status_needs_action_no_separate_row(self, mock_client_class):
+        """需介入不再单列 needs_action 行(恒是 summary 子集),summary 承载警示;
+        归档轴处境由 pp 行表达。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -385,13 +386,72 @@ class TestStatus:
         )
         mock_client_class.return_value = mock_client
 
-        result = runner.invoke(app, ["status", "wf-001"])
+        result = runner.invoke(app, ["status", "wf-001"], env={"COLUMNS": "200"})
 
         assert result.exit_code == 0
-        assert "needs_action" in result.output
-        assert "需介入" in result.output
-        # 归档轴处境由 pp 行表达(archive (failed))
+        assert "needs_action" not in result.output
+        assert "需介入" not in result.output
+        # 动作提示由 summary 承载,归档轴处境由 pp 行表达(archive (failed))
+        assert "可 archive resume 重试" in result.output
         assert "archive (failed)" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_cancelled_hides_error_row(self, mock_client_class):
+        """cancelled 场景不单列 error 行:server 已把取消原因并入 summary
+        (接管/用户取消不是错误,error 标签误导且与 summary 重复)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "analysis_status": "succeeded",
+                "status_summary": (
+                    "归档已取消（launch_dir 复用,被新流程 abc123 接管），分析结果可用"
+                ),
+                "needs_action": False,
+                "pp_phase": "archive_wait",
+                "pp_status": "cancelled",
+                "progress_percent": 100.0,
+                "error_message": "launch_dir 复用,被新流程 abc123 接管",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"], env={"COLUMNS": "200"})
+
+        assert result.exit_code == 0
+        # 原因经 summary 可见,error 行不再出现
+        assert "被新流程 abc123 接管" in result.output
+        assert "error" not in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_status_failed_keeps_error_row(self, mock_client_class):
+        """failed 场景 error_message 是真实报错,保持单列展示。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "analysis_status": "failed",
+                "status_summary": "分析失败，需排查后 resume",
+                "pp_status": "not_started",
+                "progress_percent": 80.0,
+                "error_message": "Process FASTQC failed",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"], env={"COLUMNS": "200"})
+
+        assert result.exit_code == 0
+        assert "error" in result.output
+        assert "Process FASTQC failed" in result.output
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")

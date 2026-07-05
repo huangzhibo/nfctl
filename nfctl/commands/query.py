@@ -194,11 +194,18 @@ def status(
         print_result(envelope, code)
 
     d = envelope["data"]
+    # 需介入时(失败/归档失败)summary 标黄承载警示——needs_action 恒等价于
+    # "summary 是带动作的那两句之一(需排查 resume / 可 archive resume 重试)",
+    # 单列 needs_action 行只会重复 summary,故不显示,警示用颜色不用重复文字。
+    # needs_action 布尔仍在 JSON 直出,供脚本 filter/告警。
+    summary = d.get("status_summary")
+    if summary and d.get("needs_action"):
+        summary = f"[yellow]{summary}[/yellow]"
     items = [
         ("workflow_id", d.get("workflow_id")),
         # 分析轴状态(server 派生的 analysis_status,含 queued)
         ("status", d.get("analysis_status")),
-        ("summary", d.get("status_summary")),
+        ("summary", summary),
         ("progress", f"{d.get('progress_percent', 0):.1f}%"),
         ("pipeline", d.get("pipeline_name")),
         # env 为空表示内部流程,不向 LIMS 推送进度
@@ -207,10 +214,6 @@ def status(
         ("run_name", d.get("run_name")),
         ("job_id", d.get("job_id")),
     ]
-    # 需人介入(失败/归档失败)时醒目标记
-    if d.get("needs_action"):
-        idx = next((i for i, it in enumerate(items) if it[0] == "status"), 0)
-        items.insert(idx + 1, ("needs_action", "[yellow]是（需介入）[/yellow]"))
     if d.get("project_sn"):
         items.append(("project_sn", d["project_sn"]))
     if d.get("data_number"):
@@ -227,7 +230,13 @@ def status(
         items.append(
             ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
         )
-    if d.get("error_message"):
+    # cancelled 场景(主流程取消/归档取消或被接管)不单列:server 保证取消原因
+    # 已并入 status_summary(nf-server ADR-0006),再显示 error 行既重复又误导
+    # (取消不是错误)。failed 场景 error_message 是真实报错,单列展示。
+    cancelled = (
+        d.get("analysis_status") == "cancelled" or d.get("pp_status") == "cancelled"
+    )
+    if d.get("error_message") and not cancelled:
         items.append(("error", d["error_message"]))
     if d.get("duration"):
         items.append(("duration", f"{d['duration'] / 1000:.0f}s"))
