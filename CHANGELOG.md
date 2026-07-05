@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/huangzhibo/nfctl/compare/v1.0.0...v1.1.0) (2026-07-05)
+
+
+### 新功能
+
+* **cli:** status 详情去冗余——cancelled 省略 error 行,删 needs_action 行 ([f386011](https://github.com/huangzhibo/nfctl/commit/f386011ebac157d14d227901375b1081530eca4b))
+
 ## [1.0.0](https://github.com/huangzhibo/nfctl/compare/v0.10.0...v1.0.0) (2026-07-04)
 
 
