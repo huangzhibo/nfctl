@@ -136,6 +136,7 @@ def status(
                     "status_summary": d.get("status_summary"),
                     "pp_phase": d.get("pp_phase"),
                     "pp_status": d.get("pp_status"),
+                    "error_message": d.get("error_message"),
                     "archive_eligible_after": d.get("archive_eligible_after"),
                     "archive_path": d.get("archive_path"),
                     "restore": r,
@@ -144,22 +145,38 @@ def status(
             0,
         )
 
+    # 主状态:聚焦归档轴(阶段+状态+一句话);analysis_status 归 nfctl status,
+    # 此处不平铺(归档只在分析成功后推进,summary 已交代未开始的缘由)
+    phase = d.get("pp_phase")
+    pp_status = d.get("pp_status")
     items: list[tuple[str, object]] = [
         ("workflow_id", workflow_id),
-        ("analysis_status", d.get("analysis_status")),
+        ("pp", f"{phase} ({pp_status})" if phase else pp_status),
         ("summary", d.get("status_summary")),
     ]
-    if d.get("pp_phase"):
-        items.append(("pp", f"{d['pp_phase']} ({d.get('pp_status')})"))
+    # 产物/倒计时(有则显示)
     if d.get("archive_eligible_after"):
         items.append(
             ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
         )
-    items.append(("archive_path", d.get("archive_path") or "-"))
-    items.append(("restore_job", r.get("job_id") or "-"))
-    items.append(("restore_status", r.get("status")))
-    if r.get("detail"):
-        items.append(("restore_detail", r["detail"]))
+    if d.get("archive_path"):
+        items.append(("archive_path", d["archive_path"]))
+    # 失败排查(仅 failed):原因 + 日志目录提示。SGE 日志前缀即阶段名
+    # (migrate/archive),不需存 job id 也能指到文件;Slurm 统一 slurm-*.out
+    if pp_status == "failed":
+        if d.get("error_message"):
+            items.append(("error", d["error_message"]))
+        if d.get("launch_dir") and phase:
+            items.append(
+                ("log", f"见 {d['launch_dir']} 下 {phase}.o*(SGE) / slurm-*.out(Slurm)")
+            )
+    # 解压:仅在做过(status 非 not_submitted)时显示,消除 not_submitted 噪音
+    if r.get("status") != "not_submitted":
+        items.append(("restore_status", r.get("status")))
+        if r.get("job_id"):
+            items.append(("restore_job", r["job_id"]))
+        if r.get("detail"):
+            items.append(("restore_detail", r["detail"]))
     print_kv("归档状态", items)
     sys.exit(0)
 

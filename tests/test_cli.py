@@ -1361,6 +1361,109 @@ class TestArchiveStatus:
         assert data["archive_path"] == "/archive/pipe/202607/proj/run1"
         assert data["restore"]["status"] == "done"
 
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_status_hides_restore_when_not_submitted(self, mock_client_class):
+        """没做过解压时不显示 restore 行(消除 not_submitted 噪音)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "workflow_id": "wf-001",
+                    "status_summary": "全部完成，结果可用",
+                    "pp_phase": "archive",
+                    "pp_status": "succeeded",
+                    "archive_path": "/archive/pipe/202607/proj/run1",
+                },
+            ),
+            _mock_response(
+                200,
+                {"workflow_id": "wf-001", "job_id": None, "status": "not_submitted"},
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["archive", "status", "wf-001"], env={"COLUMNS": "200"}
+        )
+
+        assert result.exit_code == 0
+        assert "/archive/pipe/202607/proj/run1" in result.output
+        assert "not_submitted" not in result.output
+        assert "restore" not in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_status_failed_shows_error_and_log(self, mock_client_class):
+        """归档失败:显示失败原因 + 日志目录提示(阶段名即 SGE 日志前缀)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "workflow_id": "wf-001",
+                    "status_summary": "归档失败，可 archive resume 重试",
+                    "pp_phase": "archive",
+                    "pp_status": "failed",
+                    "error_message": "归档失败,退出码: 64",
+                    "launch_dir": "/mnt/data/run1",
+                },
+            ),
+            _mock_response(
+                200,
+                {"workflow_id": "wf-001", "job_id": None, "status": "not_submitted"},
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["archive", "status", "wf-001"], env={"COLUMNS": "200"}
+        )
+
+        assert result.exit_code == 0
+        assert "退出码: 64" in result.output
+        # 日志提示用阶段名作 SGE 前缀,指到 launch_dir 下具体文件
+        assert "archive.o*" in result.output
+        assert "/mnt/data/run1" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_status_shows_restore_when_done(self, mock_client_class):
+        """做过解压(非 not_submitted)时显示 restore 行。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "workflow_id": "wf-001",
+                    "status_summary": "全部完成，结果可用",
+                    "pp_phase": "archive",
+                    "pp_status": "succeeded",
+                    "archive_path": "/archive/pipe/202607/proj/run1",
+                },
+            ),
+            _mock_response(
+                200,
+                {"workflow_id": "wf-001", "job_id": "7001", "status": "done"},
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app, ["archive", "status", "wf-001"], env={"COLUMNS": "200"}
+        )
+
+        assert result.exit_code == 0
+        assert "done" in result.output
+        assert "7001" in result.output
+
 
 class TestArchiveNow:
     @pytest.mark.unit
