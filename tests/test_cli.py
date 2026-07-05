@@ -455,6 +455,35 @@ class TestStatus:
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
+    def test_status_succeeded_hides_stale_error_row(self, mock_client_class):
+        """succeeded 场景不露 error 行:干净成功应无错,残留 error_message
+        (server 侧修复前的存量)由 needs_action=false 门控挡下,不自相矛盾。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "analysis_status": "succeeded",
+                "status_summary": "全部完成，结果可用",
+                "pp_phase": "archive",
+                "pp_status": "succeeded",
+                "progress_percent": 100.0,
+                "error_message": "归档失败,退出码: 64",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["status", "wf-001"], env={"COLUMNS": "200"})
+
+        assert result.exit_code == 0
+        assert "全部完成" in result.output
+        assert "退出码" not in result.output
+        assert "error" not in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
     def test_status_multiline_error_is_aligned(self, mock_client_class):
         """多行 error 的续行对齐到 value 列,不顶格。"""
         mock_client = MagicMock()
@@ -464,7 +493,7 @@ class TestStatus:
             200,
             {
                 "workflow_id": "wf-001",
-                "status": "failed",
+                "analysis_status": "failed",
                 "progress_percent": 38.0,
                 "error_message": "报错步骤：enrich (1)\n报错原因：'g1'",
             },

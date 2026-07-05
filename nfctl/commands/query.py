@@ -230,13 +230,11 @@ def status(
         items.append(
             ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
         )
-    # cancelled 场景(主流程取消/归档取消或被接管)不单列:server 保证取消原因
-    # 已并入 status_summary(nf-server ADR-0006),再显示 error 行既重复又误导
-    # (取消不是错误)。failed 场景 error_message 是真实报错,单列展示。
-    cancelled = (
-        d.get("analysis_status") == "cancelled" or d.get("pp_status") == "cancelled"
-    )
-    if d.get("error_message") and not cancelled:
+    # error 行只在失败态显示(分析失败 / 归档失败):cancelled 的原因已在
+    # summary、succeeded 应无错(残留 error_message 属 server bug),都不露
+    # error 行,避免"succeeded + error"自相矛盾;也防御存量残留。
+    is_failed = d.get("analysis_status") == "failed" or d.get("pp_status") == "failed"
+    if d.get("error_message") and is_failed:
         items.append(("error", d["error_message"]))
     if d.get("duration"):
         items.append(("duration", f"{d['duration'] / 1000:.0f}s"))
