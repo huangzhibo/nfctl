@@ -1,6 +1,6 @@
 # resources 的效率判读
 
-`nfctl resources <workflow_id>` 返回工作流聚合的 CPU / 内存 / IO / 时长指标。关键是**读懂数字**而不是罗列数字。
+`nfctl resources <workflow_id>` 返回分析聚合的 CPU / 内存 / IO / 时长指标。关键是**读懂数字**而不是罗列数字。
 
 ## Nextflow 基础：cached task 是什么
 

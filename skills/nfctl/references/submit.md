@@ -9,7 +9,8 @@ submit <launch_dir> -p <pipeline>
   │
   ├─► POST /workflow/validate
   │     输入: pipeline_name, launch_dir
-  │     校验: capacity（并发未超限）、run_sh（存在且合法）、workflow_id（可从 run.sh 提取）
+  │     校验: capacity（仅 pipeline 禁用时不通过；并发满不阻断，只提示将排队）、
+  │           run_sh（存在且合法）、workflow_id（可从 run.sh 提取）
   │     输出: can_submit + checks.{capacity, workflow_id, run_sh}.{passed, detail}
   │
   ├─► 从 checks.workflow_id.detail 解析 "TOWER_WORKFLOW_ID=xxx"
@@ -25,7 +26,7 @@ submit <launch_dir> -p <pipeline>
 
 不是服务端生成，不是用户传入，而是从 `<launch_dir>/run.sh` 中匹配 `TOWER_WORKFLOW_ID=xxx`。如果 run.sh 缺少这一行，validate 会在 `workflow_id` 这一项失败。
 
-提示：同一 workflow_id 重复投递会返回 `CONFLICT`（退出码 5），先 `cancel` 或等到终态 `delete`。
+提示：同一 workflow_id 重复投递会返回 `WORKFLOW_ID_EXISTS`（409，退出码 5）——重跑同一分析用 `resume`，首次投递请换 workflow_id。
 
 ## 参数语义
 
@@ -45,7 +46,7 @@ submit <launch_dir> -p <pipeline>
   "data": {
     "can_submit": true,
     "checks": {
-      "capacity":    {"passed": true,  "detail": "running=2, limit=5"},
+      "capacity":    {"passed": true,  "detail": "运行中 2/5"},
       "run_sh":      {"passed": true,  "detail": "OK"},
       "workflow_id": {"passed": true,  "detail": "TOWER_WORKFLOW_ID=wf-xxx"}
     }
@@ -59,10 +60,11 @@ submit <launch_dir> -p <pipeline>
 
 | 症状 | 根因 | 处置 |
 |------|------|------|
-| `capacity` 未通过 | 该 pipeline 并发已满 | 等一轮、或 `pipeline update -m` 调大 `max_concurrent` |
+| `capacity` 未通过 | pipeline 已禁用 | `pipeline update <name> --enabled`；注意并发满**不算失败**（照常受理后排队，capacity detail 会提示） |
 | `workflow_id` 未通过，detail "无法提取" | run.sh 没写 `TOWER_WORKFLOW_ID=` | 补上这一行 |
 | `run_sh` 未通过 | 路径不存在或不可读 | 检查 `launch_dir` 在服务端视角下是否有效 |
-| 投递成功后立即 `CONFLICT` | 同 workflow_id 已有在跑任务 | `list` 查重，先 cancel 或 delete |
+| `WORKFLOW_ID_EXISTS`（409） | 同 workflow_id 已注册过 | 重跑同一分析用 `resume`；首投换 workflow_id |
+| `LAUNCH_DIR_BUSY`（409） | 该目录上另一分析进行中 | 确需重跑先 `cancel` 占用流程再 `resume` |
 
 ## 投递后
 

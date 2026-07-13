@@ -27,6 +27,7 @@ nfctl overview                           # 系统概览
 nfctl list [--status running] [-n 20]    # 分析列表
 nfctl list --all                         # 获取全部分析（自动翻页）
 nfctl list --sort created_at --sort-order asc  # 按创建时间升序
+nfctl list --pp failed                   # 按归档/后处理轴过滤（与 --status 正交）
 nfctl list --pipeline WGS --env prod     # 按 Pipeline / 环境过滤
 nfctl list --project-sn P2026001         # 按 LIMS 项目编号过滤
 nfctl list --data-number D001            # 按数据编号过滤
@@ -48,15 +49,24 @@ nfctl submit <dir> -p <name> -S P2026001 --env prod      # 指定环境（test/g
 nfctl submit <dir> -p <name> -S P2026001 --dry-run       # 仅验证，不实际投递
 nfctl resume <id>                                        # 重跑失败/取消的分析
 nfctl cancel <id> [--reason "原因"]                      # 取消整个分析（running/succeeded 均可，会通知 LIMS 作废）
-nfctl archive cancel <id>                                # 仅取消后处理/归档，保留分析结果
 nfctl delete <id>                                        # 删除分析（succeeded 不可删）
+```
+
+### 归档 / 后处理
+
+```bash
+nfctl archive status <id>                # 归档信息（产物位置/倒计时）+ 最近一次解压任务状态
+nfctl archive now <id>                   # 跳过归档等待期，立即开始归档（仅"等待归档"阶段可用）
+nfctl archive resume <id>                # 恢复失败/取消的归档或后处理（分析须已成功）
+nfctl archive restore <id> [--wait]      # 解压归档产物回 launch_dir 原位（大归档可达小时级）
+nfctl archive cancel <id>                # 仅取消后处理/归档，保留分析结果
 ```
 
 ### 其他
 
 ```bash
-nfctl pipeline list                      # Pipeline 配置
-nfctl config set/show                    # 配置管理
+nfctl pipeline list/get/create/update/delete   # Pipeline 配置（并发/归档策略/飞书通知/超时覆盖）
+nfctl config show/set/use/list/remove          # 配置与多 profile 管理
 ```
 
 ## 手动 submit 场景
