@@ -917,7 +917,7 @@ class TestDelete:
         mock_client.request.return_value = _mock_response(
             400,
             {
-                "detail": "已成功完成的工作流不可删除（成功结果视为合规资产）",
+                "detail": "已成功完成的分析不可删除（成功结果视为合规资产）",
                 "error_code": "VALIDATION_ERROR",
                 "resource_id": "wf-ok",
             },
@@ -962,7 +962,7 @@ class TestDelete:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_delete_404_passes_through(self, mock_client_class):
-        """不存在的工作流:DELETE 404 直接透传为错误。"""
+        """不存在的分析:DELETE 404 直接透传为错误。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -1516,7 +1516,7 @@ class TestArchiveResume:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_archive_resume_hits_archive_endpoint(self, mock_client_class):
-        """archive resume 走 /archive/resume 子资源,与主流程 resume 分开。"""
+        """archive resume 走 /archive/resume 子资源,与分析主体 resume 分开。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
@@ -1534,14 +1534,14 @@ class TestArchiveResume:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_archive_resume_400_passes_hint_through(self, mock_client_class):
-        """主流程未成功时 server 400 + hint 指回 resume,原样透传给用户。"""
+        """分析未成功时 server 400 + hint 指回 resume,原样透传给用户。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
         mock_client.request.return_value = _mock_response(
             400,
             {
-                "detail": "主流程未成功(failed/cancelled),不存在可恢复的归档;重跑主流程请用 resume",
+                "detail": "分析未成功(failed/cancelled),不存在可恢复的归档;重跑分析请用 resume",
                 "error_code": "RESUME_REJECTED",
                 "hint": "POST /workflow/{workflow_id}/resume",
             },

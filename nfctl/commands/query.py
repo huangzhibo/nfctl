@@ -100,7 +100,7 @@ def list_workflows(
     sort_by: str = typer.Option("created_at", "--sort", help="排序字段"),
     sort_order: str = typer.Option("desc", "--sort-order", help="排序方向 (asc/desc)"),
 ) -> None:
-    """工作流列表"""
+    """分析列表"""
     client = AgentClient()
     params = {
         # 两轴过滤,与表格 Status/Archive 列同口径(server 端 SQL 谓词,
@@ -186,7 +186,7 @@ def list_workflows(
 def status(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """工作流详情"""
+    """分析详情"""
     client = AgentClient()
     envelope, code = client.get(f"/workflow/{workflow_id}")
 
@@ -323,7 +323,7 @@ def log(
 def progress(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """工作流进度（含 process 级别明细）"""
+    """分析进度（含 process 级别明细）"""
     client = AgentClient()
     envelope, code = client.get(f"/workflow/{workflow_id}/progress")
 

@@ -24,14 +24,14 @@ export NFCTL_URL=http://nf-server:8000
 
 ```bash
 nfctl overview                           # 系统概览
-nfctl list [--status running] [-n 20]    # 工作流列表
-nfctl list --all                         # 获取全部工作流（自动翻页）
+nfctl list [--status running] [-n 20]    # 分析列表
+nfctl list --all                         # 获取全部分析（自动翻页）
 nfctl list --sort created_at --sort-order asc  # 按创建时间升序
 nfctl list --pipeline WGS --env prod     # 按 Pipeline / 环境过滤
 nfctl list --project-sn P2026001         # 按 LIMS 项目编号过滤
 nfctl list --data-number D001            # 按数据编号过滤
 nfctl list --query sample1               # 按 workflow_id / launch_dir / data_number 搜索
-nfctl status <id>                        # 工作流详情
+nfctl status <id>                        # 分析详情
 nfctl progress <id>                      # 进度（含 process 级别明细）
 nfctl tasks <id> [--status failed]       # 子任务列表
 nfctl tasks <id> --sort duration --sort-order desc  # 按耗时排序
@@ -43,13 +43,13 @@ nfctl resources <id>                     # 资源统计
 ### 管理
 
 ```bash
-nfctl submit <dir> -p <name> -S P2026001                 # 投递工作流（--project-sn 必填）
+nfctl submit <dir> -p <name> -S P2026001                 # 提交分析（--project-sn 必填）
 nfctl submit <dir> -p <name> -S P2026001 --env prod      # 指定环境（test/gray/prod）
 nfctl submit <dir> -p <name> -S P2026001 --dry-run       # 仅验证，不实际投递
-nfctl resume <id>                                        # 恢复失败/取消的工作流
-nfctl cancel <id> [--reason "原因"]                      # 整体撤销流程（running/succeeded 均可，会通知 LIMS 作废）
-nfctl cancel <id> --scope archive                        # 仅取消后处理/归档，保留分析结果
-nfctl delete <id>                                        # 删除工作流（succeeded 不可删）
+nfctl resume <id>                                        # 重跑失败/取消的分析
+nfctl cancel <id> [--reason "原因"]                      # 取消整个分析（running/succeeded 均可，会通知 LIMS 作废）
+nfctl archive cancel <id>                                # 仅取消后处理/归档，保留分析结果
+nfctl delete <id>                                        # 删除分析（succeeded 不可删）
 ```
 
 ### 其他

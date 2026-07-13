@@ -75,7 +75,7 @@ def submit(
     env: str | None = typer.Option(None, "--env", "-e", help="环境 (test/gray/prod)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="仅验证，不实际投递"),
 ) -> None:
-    """投递工作流"""
+    """提交分析"""
     client = AgentClient()
     val_data, workflow_id = _do_validate(client, pipeline, launch_dir)
 
@@ -120,7 +120,7 @@ def submit(
 def resume(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """重跑失败/取消的主流程（恢复归档用 nfctl archive resume）"""
+    """重跑失败/取消的分析（恢复归档用 nfctl archive resume）"""
     client = AgentClient()
     envelope, code = client.post(f"/workflow/{workflow_id}/resume")
 
@@ -136,8 +136,8 @@ def cancel(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
 ) -> None:
-    """整体撤销流程（仅取消归档、保留分析结果用 nfctl archive cancel）"""
-    _confirm(f"确认取消 {workflow_id}? 已成功的流程将被整体撤销并通知 LIMS 作废。")
+    """取消整个分析（仅取消归档、保留分析结果用 nfctl archive cancel）"""
+    _confirm(f"确认取消 {workflow_id}? 已成功的分析将被整体撤销并通知 LIMS 作废。")
 
     client = AgentClient()
     # 归档取消已收拢进 archive 命令组(nfctl archive cancel),本命令固定整体撤销;
@@ -162,7 +162,7 @@ def cancel(
 def delete(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """删除工作流（仅终态；succeeded 视为合规资产，server 拒删）"""
+    """删除分析（仅终态；succeeded 视为合规资产，server 拒删）"""
     # succeeded 不可删的合规守卫已下沉 server(直调 API 也拦得住),CLI 不再预查
     _confirm(f"确认删除 {workflow_id}? 此操作不可恢复。")
 

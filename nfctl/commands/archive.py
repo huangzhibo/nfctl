@@ -1,8 +1,8 @@
 """
 归档/后处理操作命令组：archive resume / restore / status / cancel
 
-归档专属操作的统一归宿,与主流程操作(resume/cancel)分开,
-避免"resume 会不会重跑主流程"的歧义。
+归档专属操作的统一归宿,与分析主体操作(resume/cancel)分开,
+避免"resume 会不会重跑分析"的歧义。
 """
 
 import sys
@@ -24,7 +24,7 @@ _WAIT_GONE_LIMIT = 15
 def resume(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """恢复失败/取消的归档或后处理（主流程须已成功；重跑主流程用 nfctl resume）"""
+    """恢复失败/取消的归档或后处理（分析须已成功；重跑分析用 nfctl resume）"""
     client = AgentClient()
     envelope, code = client.post(f"/workflow/{workflow_id}/archive/resume")
 
@@ -186,7 +186,7 @@ def cancel(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
 ) -> None:
-    """取消后处理/归档，保留成功的分析结果（整体撤销流程用 nfctl cancel）"""
+    """取消后处理/归档，保留成功的分析结果（取消整个分析用 nfctl cancel）"""
     from nfctl.commands.workflow import _confirm
 
     _confirm(f"确认仅取消 {workflow_id} 的归档(保留分析结果)?")
