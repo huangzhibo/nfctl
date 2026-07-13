@@ -45,6 +45,8 @@ def _detail_items(d: dict, time_key: str) -> list[tuple[str, Any]]:
         ("large_file_threshold", d.get("large_file_threshold")),
         ("archive_dirs", d.get("archive_dirs")),
         ("archive_delay_hours", d.get("archive_delay_hours")),
+        ("stall_timeout_hours", d.get("stall_timeout_hours")),
+        ("execution_timeout_hours", d.get("execution_timeout_hours")),
         (time_key, format_local_time(d.get(time_key))),
     ]
 
@@ -141,6 +143,14 @@ def create_pipeline(
     archive_delay_hours: int | None = typer.Option(
         None, "--archive-delay-hours", help="归档延迟小时数（不设=服务端默认 72）"
     ),
+    stall_timeout_hours: int | None = typer.Option(
+        None, "--stall-timeout-hours", help="停滞超时小时数（不设=服务端默认 12）"
+    ),
+    execution_timeout_hours: int | None = typer.Option(
+        None,
+        "--execution-timeout-hours",
+        help="执行总时长上限小时数（不设=服务端默认 72）",
+    ),
 ) -> None:
     """创建 Pipeline 配置"""
     body: dict = {
@@ -158,6 +168,10 @@ def create_pipeline(
         body["archive_dirs"] = archive_dirs
     if archive_delay_hours is not None:
         body["archive_delay_hours"] = archive_delay_hours
+    if stall_timeout_hours is not None:
+        body["stall_timeout_hours"] = stall_timeout_hours
+    if execution_timeout_hours is not None:
+        body["execution_timeout_hours"] = execution_timeout_hours
 
     client = AgentClient()
     envelope, code = client.post("/pipeline/", json=body)
@@ -194,6 +208,12 @@ def update_pipeline(
     archive_delay_hours: int | None = typer.Option(
         None, "--archive-delay-hours", help="归档延迟小时数"
     ),
+    stall_timeout_hours: int | None = typer.Option(
+        None, "--stall-timeout-hours", help="停滞超时小时数"
+    ),
+    execution_timeout_hours: int | None = typer.Option(
+        None, "--execution-timeout-hours", help="执行总时长上限小时数"
+    ),
 ) -> None:
     """更新 Pipeline 配置（仅传入的字段会被更新）"""
     body: dict = {}
@@ -211,6 +231,10 @@ def update_pipeline(
         body["archive_dirs"] = archive_dirs
     if archive_delay_hours is not None:
         body["archive_delay_hours"] = archive_delay_hours
+    if stall_timeout_hours is not None:
+        body["stall_timeout_hours"] = stall_timeout_hours
+    if execution_timeout_hours is not None:
+        body["execution_timeout_hours"] = execution_timeout_hours
 
     client = AgentClient()
     envelope, code = client.put(f"/pipeline/{pipeline_name}", json=body)
