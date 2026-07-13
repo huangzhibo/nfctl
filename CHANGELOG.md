@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0](https://github.com/huangzhibo/nfctl/compare/v1.1.0...v1.2.0) (2026-07-13)
+
+
+### 新功能
+
+* **cli:** pipeline 命令支持停滞/执行超时覆盖参数 ([0d93abd](https://github.com/huangzhibo/nfctl/commit/0d93abd0feb60a43e48dbe5ebcbc6ebdb8747be1))
+
+
+### 修复
+
+* **cli:** archive status 聚焦归档轴,去 restore 噪音,失败给日志指路 ([d9d038b](https://github.com/huangzhibo/nfctl/commit/d9d038ba2c032a0daeac2e37f89d3490b065a496))
+* **cli:** status 的 error 行只在失败态显示,不再随 succeeded 露出 ([d6f7742](https://github.com/huangzhibo/nfctl/commit/d6f77425535d38de29446af799bd743ce8f18542))
+* **cli:** 帮助文本统一"分析"口径, 不再称"工作流/主流程" ([10bf7af](https://github.com/huangzhibo/nfctl/commit/10bf7af6a9272ee30ebc4e06c4ba7ae492c75419))
+
+
+### 文档
+
+* 补齐 archive 命令组文档, 状态契约换 analysis_status 口径 ([2ce67e7](https://github.com/huangzhibo/nfctl/commit/2ce67e7398736d2b12bea900628564a20ae8ab57))
+
 ## [1.1.0](https://github.com/huangzhibo/nfctl/compare/v1.0.0...v1.1.0) (2026-07-05)
 
 
