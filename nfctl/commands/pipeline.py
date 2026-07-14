@@ -144,12 +144,12 @@ def create_pipeline(
         None, "--archive-delay-hours", help="归档延迟小时数（不设=服务端默认 72）"
     ),
     stall_timeout_hours: int | None = typer.Option(
-        None, "--stall-timeout-hours", help="停滞超时小时数（不设=服务端默认 12）"
+        None, "--stall-timeout-hours", help="停滞超时小时数（不设=服务端默认 72）"
     ),
     execution_timeout_hours: int | None = typer.Option(
         None,
         "--execution-timeout-hours",
-        help="执行总时长上限小时数（不设=服务端默认 72）",
+        help="执行总时长上限小时数（不设=服务端默认 120）",
     ),
 ) -> None:
     """创建 Pipeline 配置"""
