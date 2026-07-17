@@ -56,7 +56,7 @@ description: "用 nfctl CLI 投递、查询、诊断 Nextflow 分析，并操作
 
 ### 配置
 
-服务地址通过 `NFCTL_URL` 环境变量或 `nfctl config set url <URL>` 设置，默认 `http://localhost:8000`。连接失败会返回 `NETWORK_ERROR` 和 `NFCTL_URL` 提示。
+服务地址解析优先级：`--profile <名>`/`NFCTL_PROFILE` > `NFCTL_URL` 直连 > 当前 profile（`~/.nfctl/config.json`，`nfctl config list` 查看）。未配置或 profile 不存在返回 `CONFIG_ERROR`（按 hint 处理）；连接失败返回 `NETWORK_ERROR`。
 
 ## Core Concepts
 

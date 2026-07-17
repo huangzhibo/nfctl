@@ -11,11 +11,16 @@ pip install nfctl
 ## 配置
 
 ```bash
-# 设置服务地址（默认 http://localhost:8000）
+# 设置服务地址（未配置时命令报 CONFIG_ERROR 并给出提示）
 nfctl config set url http://nf-server:8000
 
-# 或通过环境变量
+# 或通过环境变量直连（解析优先级：--profile/NFCTL_PROFILE > NFCTL_URL > 当前 profile）
 export NFCTL_URL=http://nf-server:8000
+
+# 多环境用 profile 管理
+nfctl config set url http://test-server:8000 --profile test
+nfctl config use test        # 切换当前 profile
+nfctl --profile prod list    # 单条命令临时指定
 ```
 
 ## 命令
@@ -67,6 +72,7 @@ nfctl archive cancel <id>                # 仅取消后处理/归档，保留分
 ```bash
 nfctl pipeline list/get/create/update/delete   # Pipeline 配置（并发/归档策略/飞书通知/超时覆盖）
 nfctl config show/set/use/list/remove          # 配置与多 profile 管理
+nfctl -v <命令>                                # 调试：stderr 显示 HTTP 请求/状态/耗时
 ```
 
 ## 手动 submit 场景

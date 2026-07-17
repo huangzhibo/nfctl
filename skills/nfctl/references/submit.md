@@ -13,7 +13,7 @@ submit <launch_dir> -p <pipeline>
   │           run_sh（存在且合法）、workflow_id（可从 run.sh 提取）
   │     输出: can_submit + checks.{capacity, workflow_id, run_sh}.{passed, detail}
   │
-  ├─► 从 checks.workflow_id.detail 解析 "TOWER_WORKFLOW_ID=xxx"
+  ├─► 读取响应一等字段 data.workflow_id（server 从 run.sh 提取）
   │
   └─► POST /workflow/submit（仅当 --dry-run 未设置）
         输入: workflow_id, launch_dir, pipeline_name, project_sn（必填），可选 env
@@ -45,6 +45,7 @@ submit <launch_dir> -p <pipeline>
   "ok": true,
   "data": {
     "can_submit": true,
+    "workflow_id": "wf-xxx",
     "checks": {
       "capacity":    {"passed": true,  "detail": "运行中 2/5"},
       "run_sh":      {"passed": true,  "detail": "OK"},
