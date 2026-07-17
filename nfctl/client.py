@@ -19,6 +19,7 @@ nf-server 错误响应顶层扁平:
 其中 type 优先用服务端 error_code,回退到 HTTP 状态码映射。
 """
 
+import time
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from typing import Any
@@ -26,7 +27,7 @@ from typing import Any
 import httpx
 
 from nfctl.config import ConfigError, get_url
-from nfctl.output import err_console
+from nfctl.output import debug, err_console
 
 try:
     _VERSION = _pkg_version("nfctl")
@@ -79,6 +80,9 @@ class AgentClient:
         except ConfigError as e:
             return _error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION
 
+        # 耗时自测(不用 resp.elapsed:含连接建立更真实,且对 mock 响应友好)
+        debug(f"→ {method} {base_url}{path}")
+        t0 = time.monotonic()
         try:
             with httpx.Client(
                 base_url=base_url,
@@ -95,6 +99,7 @@ class AgentClient:
         except httpx.TimeoutException:
             return _error("TIMEOUT", f"请求超时: {base_url}{path}"), EXIT_NETWORK
 
+        debug(f"← {resp.status_code} ({time.monotonic() - t0:.2f}s)")
         _maybe_warn_new_version(resp)
 
         if resp.status_code >= 400:

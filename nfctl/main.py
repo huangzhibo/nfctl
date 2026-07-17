@@ -11,7 +11,13 @@ import typer
 
 from nfctl.client import EXIT_VALIDATION, _error
 from nfctl.config import ConfigError, apply_profile_option, get_url
-from nfctl.output import OutputFormat, apply_options, print_result
+from nfctl.output import (
+    OutputFormat,
+    apply_options,
+    print_result,
+    set_quiet,
+    set_verbose,
+)
 
 app = typer.Typer(
     name="nfctl",
@@ -43,7 +49,12 @@ def main(
     quiet: bool = typer.Option(
         False, "--quiet", "-q", help="跳过交互式确认提示（--format json 自动隐含）"
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="调试日志"),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="调试日志（HTTP 请求/状态/耗时，输出到 stderr）",
+    ),
     no_color: bool = typer.Option(False, "--no-color", help="禁用颜色"),
     profile: str | None = typer.Option(
         None,
@@ -66,14 +77,15 @@ def main(
             print_result(_error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION)
     apply_profile_option(profile)
 
-    app._quiet = quiet  # type: ignore[attr-defined]
-    app._verbose = verbose  # type: ignore[attr-defined]
+    set_quiet(quiet)
+    set_verbose(verbose)
 
     if no_color:
+        # 命令模块在 import 时已按名绑定 console 对象,只能原地改属性
         from nfctl.output import console, err_console
 
-        console.__init__(no_color=True)  # type: ignore[misc]
-        err_console.__init__(stderr=True, no_color=True)  # type: ignore[misc]
+        console.no_color = True
+        err_console.no_color = True
 
 
 # 注册命令

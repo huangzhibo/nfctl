@@ -9,6 +9,7 @@ import typer
 
 from nfctl.client import EXIT_VALIDATION, AgentClient, _error
 from nfctl.output import (
+    confirm,
     console,
     format_local_time,
     is_json,
@@ -18,20 +19,6 @@ from nfctl.output import (
 )
 
 app = typer.Typer(no_args_is_help=True)
-
-
-def _is_quiet() -> bool:
-    from nfctl.main import app as main_app
-
-    return getattr(main_app, "_quiet", False)
-
-
-def _confirm(message: str) -> None:
-    """交互确认（--quiet 或 --format json 时跳过）"""
-    if _is_quiet() or is_json():
-        return
-    if not typer.confirm(message, default=False):
-        raise typer.Abort()
 
 
 def _detail_items(d: dict, time_key: str) -> list[tuple[str, Any]]:
@@ -251,7 +238,7 @@ def delete_pipeline(
     pipeline_name: str = typer.Argument(help="Pipeline 名称"),
 ) -> None:
     """删除 Pipeline 配置"""
-    _confirm(f"确认删除 Pipeline '{pipeline_name}'? 此操作不可恢复。")
+    confirm(f"确认删除 Pipeline '{pipeline_name}'? 此操作不可恢复。")
 
     client = AgentClient()
     envelope, code = client.delete(f"/pipeline/{pipeline_name}")

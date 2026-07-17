@@ -13,7 +13,9 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
+import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 console = Console()
@@ -30,6 +32,32 @@ class OutputFormat(StrEnum):
 # 全局状态（由 main.py callback 设置）
 _format: OutputFormat = OutputFormat.TABLE
 _jq_expr: str | None = None
+_quiet: bool = False
+_verbose: bool = False
+
+
+def set_quiet(quiet: bool) -> None:
+    global _quiet
+    _quiet = quiet
+
+
+def set_verbose(verbose: bool) -> None:
+    global _verbose
+    _verbose = verbose
+
+
+def debug(message: str) -> None:
+    """--verbose 时输出调试行到 stderr,不污染 stdout 的 JSON 契约"""
+    if _verbose:
+        err_console.print(f"[dim]{escape(message)}[/dim]")
+
+
+def confirm(message: str) -> None:
+    """危险操作的交互确认（--quiet 或 --format json 时跳过），拒绝则 Abort。"""
+    if _quiet or is_json():
+        return
+    if not typer.confirm(message, default=False):
+        raise typer.Abort()
 
 
 def set_format(fmt: OutputFormat) -> None:

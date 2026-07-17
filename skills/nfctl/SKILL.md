@@ -87,7 +87,7 @@ Pipeline (可选并发控制)
 
 ```
 # 查询
-overview
+overview                                   # 统计 + reconciler 存活(data.reconciler.alive=false ⇒ 推进全停,查 daemon 日志)
 list      [-s ANALYSIS_STATUS][--pp PP_STATUS][-p PIPELINE][--env E][-S PROJECT_SN][-D DATA_NUMBER][-q QUERY][-n N][--page P][--all][--sort F][--sort-order asc|desc]
 status    WORKFLOW_ID
 progress  WORKFLOW_ID                    # 整体进度 + process 级 pending/running/succeeded/cached/failed/...

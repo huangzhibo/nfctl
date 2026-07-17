@@ -96,6 +96,16 @@ def set_value(
             EXIT_VALIDATION,
         )
 
+    # httpx 的 base_url 要求带 scheme;此处不拦,首次请求才报错且信息更难懂
+    if not value.startswith(("http://", "https://")):
+        print_result(
+            _error(
+                "VALIDATION_ERROR",
+                f"url 需以 http:// 或 https:// 开头: {value}",
+            ),
+            EXIT_VALIDATION,
+        )
+
     _, current = list_profiles()
     target = profile or current or "default"
     set_profile_url(target, value)

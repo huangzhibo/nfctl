@@ -7,21 +7,7 @@ import sys
 import typer
 
 from nfctl.client import EXIT_VALIDATION, AgentClient, _error
-from nfctl.output import console, is_json, print_kv, print_result
-
-
-def _is_quiet() -> bool:
-    from nfctl.main import app
-
-    return getattr(app, "_quiet", False)
-
-
-def _confirm(message: str) -> None:
-    """交互确认（--quiet 或 --format json 时跳过）"""
-    if _is_quiet() or is_json():
-        return
-    if not typer.confirm(message, default=False):
-        raise typer.Abort()
+from nfctl.output import confirm, console, is_json, print_kv, print_result
 
 
 def _do_validate(
@@ -137,7 +123,7 @@ def cancel(
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
 ) -> None:
     """取消整个分析（仅取消归档、保留分析结果用 nfctl archive cancel）"""
-    _confirm(f"确认取消 {workflow_id}? 已成功的分析将被整体撤销并通知 LIMS 作废。")
+    confirm(f"确认取消 {workflow_id}? 已成功的分析将被整体撤销并通知 LIMS 作废。")
 
     client = AgentClient()
     # 归档取消已收拢进 archive 命令组(nfctl archive cancel),本命令固定整体撤销;
@@ -164,7 +150,7 @@ def delete(
 ) -> None:
     """删除分析（仅终态；succeeded 视为合规资产，server 拒删）"""
     # succeeded 不可删的合规守卫已下沉 server(直调 API 也拦得住),CLI 不再预查
-    _confirm(f"确认删除 {workflow_id}? 此操作不可恢复。")
+    confirm(f"确认删除 {workflow_id}? 此操作不可恢复。")
 
     client = AgentClient()
     envelope, code = client.delete(f"/workflow/{workflow_id}")

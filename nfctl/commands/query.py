@@ -20,10 +20,25 @@ def overview() -> None:
     client = AgentClient()
     envelope, code = client.get("/stats/overview")
 
-    if not envelope["ok"] or is_json():
+    if not envelope["ok"]:
         print_result(envelope, code)
 
     data = envelope["data"]
+
+    # reconciler 存活(server /health 心跳判定):陈旧 = 一切推进停止,
+    # 两种模式都要暴露(Agent 走 JSON,同样依赖这个信号);/health 不可达时静默省略
+    reconciler = None
+    health_env, _ = client.get("/health")
+    if health_env.get("ok"):
+        rec = health_env["data"].get("reconciler") or {}
+        if rec.get("alive") is not None:
+            reconciler = rec
+
+    if is_json():
+        if reconciler is not None:
+            data["reconciler"] = reconciler
+        print_result(envelope, code)
+
     items: list[tuple[str, object]] = [
         ("running", data.get("running", 0)),
         ("succeeded", data.get("succeeded", 0)),
@@ -33,20 +48,15 @@ def overview() -> None:
         # SGE 当前等待数(纯监控);全局阈值已退役,并发控制下沉到 per-pipeline max_concurrent
         ("queue_waiting", data.get("queue_waiting", 0)),
     ]
-
-    # reconciler 存活(server /health 心跳判定):陈旧 = 一切推进停止,必须醒目
-    health_env, _ = client.get("/health")
-    if health_env.get("ok"):
-        rec = health_env["data"].get("reconciler") or {}
-        if rec.get("alive") is not None:
-            items.append(
-                (
-                    "reconciler",
-                    "[green]alive[/green]"
-                    if rec["alive"]
-                    else "[red]未在推进(daemon 死/卡死/DB 不可写,查 daemon 日志)[/red]",
-                )
+    if reconciler is not None:
+        items.append(
+            (
+                "reconciler",
+                "[green]alive[/green]"
+                if reconciler["alive"]
+                else "[red]未在推进(daemon 死/卡死/DB 不可写,查 daemon 日志)[/red]",
             )
+        )
 
     print_kv("Workflow 概览", items)
 

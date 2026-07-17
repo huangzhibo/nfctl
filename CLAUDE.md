@@ -49,7 +49,7 @@ uv run ruff format nfctl     # 格式化
 | `main.py` | Typer app 定义、全局选项、命令注册 |
 | `client.py` | httpx 封装、HTTP 状态码映射、错误信封构造 |
 | `config.py` | 配置管理（`~/.nfctl/config.json` 多 profile；优先级 `--profile`/`NFCTL_PROFILE` > `NFCTL_URL` 直连 > 当前 profile） |
-| `output.py` | 双模式输出（Rich table / JSON 信封）、全局格式状态 |
+| `output.py` | 双模式输出（Rich table / JSON 信封）、全局状态（format/jq/quiet/verbose）、危险操作交互确认 |
 | `commands/query.py` | 查询命令：overview, list, status, progress, tasks, task, log, resources |
 | `commands/workflow.py` | 管理命令：submit（含 --dry-run）, cancel, delete, resume |
 | `commands/archive.py` | 归档/后处理命令：status, now, resume, restore, cancel |

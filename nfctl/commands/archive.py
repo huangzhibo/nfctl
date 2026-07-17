@@ -11,7 +11,14 @@ import time
 import typer
 
 from nfctl.client import AgentClient
-from nfctl.output import console, format_local_time, is_json, print_kv, print_result
+from nfctl.output import (
+    confirm,
+    console,
+    format_local_time,
+    is_json,
+    print_kv,
+    print_result,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -187,9 +194,7 @@ def cancel(
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
 ) -> None:
     """取消后处理/归档，保留成功的分析结果（取消整个分析用 nfctl cancel）"""
-    from nfctl.commands.workflow import _confirm
-
-    _confirm(f"确认仅取消 {workflow_id} 的归档(保留分析结果)?")
+    confirm(f"确认仅取消 {workflow_id} 的归档(保留分析结果)?")
 
     client = AgentClient()
     body: dict = {"scope": "archive"}

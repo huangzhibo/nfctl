@@ -147,6 +147,48 @@ class TestOverview:
         assert "reconciler" in result.output
         assert fragment in result.output
 
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_overview_json_includes_reconciler(self, mock_client_class):
+        """JSON 模式同样合并 reconciler 信号(Agent 是 -f json 的主要用户)。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.side_effect = [
+            _mock_response(
+                200,
+                {
+                    "running": 1,
+                    "succeeded": 5,
+                    "failed": 0,
+                    "cancelled": 0,
+                    "total": 6,
+                    "by_pipeline": [],
+                    "queue_waiting": 0,
+                },
+            ),
+            _mock_response(
+                200,
+                {
+                    "status": "degraded",
+                    "database": {"connected": True},
+                    "queue": {},
+                    "reconciler": {
+                        "alive": False,
+                        "last_tick_at": "2026-07-04T10:00:00+00:00",
+                    },
+                },
+            ),
+        ]
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "overview"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["data"]["reconciler"]["alive"] is False
+
 
 class TestList:
     @pytest.mark.unit
@@ -2174,6 +2216,22 @@ class TestConfig:
         assert data["error"]["type"] == "VALIDATION_ERROR"
 
     @pytest.mark.unit
+    def test_config_set_url_requires_scheme(self, tmp_path, monkeypatch):
+        """无 scheme 的 URL 在 set 时即拦下,不等首次请求才报难懂的 httpx 错误"""
+        config_file = tmp_path / "config.json"
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(
+            app, ["--format", "json", "config", "set", "url", "nf-server:8000"]
+        )
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "VALIDATION_ERROR"
+        assert not config_file.exists()
+
+    @pytest.mark.unit
     def test_config_list(self, tmp_path, monkeypatch):
         config_file = tmp_path / "config.json"
         monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
@@ -2372,3 +2430,42 @@ class TestVersionHandshake:
 
         assert result.exit_code == 0
         assert "有新版本" not in result.output
+
+
+class TestVerbose:
+    """--verbose/-v:HTTP 调试行走 stderr,stdout 的 JSON 契约不受污染。"""
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_verbose_debug_lines_on_stderr(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"items": [], "total": 0}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "-v", "list"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.stdout)
+        assert data["ok"] is True
+        assert "→ GET http://test/workflow/list" in result.stderr
+        assert "← 200" in result.stderr
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_no_debug_lines_without_verbose(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"items": [], "total": 0}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "list"])
+
+        assert result.exit_code == 0
+        assert "← 200" not in (result.stderr or "")
