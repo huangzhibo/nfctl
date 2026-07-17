@@ -40,7 +40,7 @@ uv run ruff format nfctl     # 格式化
 ### 命令注册方式
 
 - 查询和管理命令在 `main.py` 中扁平注册（`app.command()`）
-- `config` 和 `pipeline` 作为子命令组通过 `app.add_typer()` 注册
+- `config`、`pipeline`、`archive` 作为子命令组通过 `app.add_typer()` 注册
 
 ### 模块职责
 
@@ -48,12 +48,13 @@ uv run ruff format nfctl     # 格式化
 |------|------|
 | `main.py` | Typer app 定义、全局选项、命令注册 |
 | `client.py` | httpx 封装、HTTP 状态码映射、错误信封构造 |
-| `config.py` | 配置管理（`~/.nfctl/config.json`，`NFCTL_URL` 环境变量） |
+| `config.py` | 配置管理（`~/.nfctl/config.json` 多 profile；优先级 `--profile`/`NFCTL_PROFILE` > `NFCTL_URL` 直连 > 当前 profile） |
 | `output.py` | 双模式输出（Rich table / JSON 信封）、全局格式状态 |
-| `commands/query.py` | 查询命令：overview, list, status, tasks, task, log, resources |
+| `commands/query.py` | 查询命令：overview, list, status, progress, tasks, task, log, resources |
 | `commands/workflow.py` | 管理命令：submit（含 --dry-run）, cancel, delete, resume |
-| `commands/config_cmd.py` | 配置命令：set, show |
-| `commands/pipeline.py` | Pipeline 命令：list |
+| `commands/archive.py` | 归档/后处理命令：status, now, resume, restore, cancel |
+| `commands/config_cmd.py` | 配置命令：show, set, use, list, remove |
+| `commands/pipeline.py` | Pipeline 命令：list, get, create, update, delete |
 
 ### 测试模式
 
