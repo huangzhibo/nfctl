@@ -1706,7 +1706,8 @@ class TestPipeline:
 
         result = runner.invoke(app, ["--format", "json", "pipeline", "get", "NOPE"])
 
-        assert result.exit_code != 0
+        # 与 client 层 404/NOT_FOUND 同退出码(EXIT_VALIDATION)
+        assert result.exit_code == 2
         data = json.loads(result.output)
         assert data["ok"] is False
         assert data["error"]["type"] == "NOT_FOUND"
@@ -2138,6 +2139,41 @@ class TestConfig:
         assert result.exit_code == 2
 
     @pytest.mark.unit
+    def test_config_use_missing_profile_json(self, tmp_path, monkeypatch):
+        """JSON 模式下错误必须走 ok:false 信封 + 退出码 2,不能包成 ok:true"""
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(app, ["--format", "json", "config", "use", "nope"])
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "CONFIG_ERROR"
+        assert "config list" in data["error"]["hint"]
+
+    @pytest.mark.unit
+    def test_config_remove_missing_profile_json(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(app, ["--format", "json", "config", "remove", "nope"])
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "CONFIG_ERROR"
+
+    @pytest.mark.unit
+    def test_config_set_unknown_key_json(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(app, ["--format", "json", "config", "set", "foo", "bar"])
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "VALIDATION_ERROR"
+
+    @pytest.mark.unit
     def test_config_list(self, tmp_path, monkeypatch):
         config_file = tmp_path / "config.json"
         monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)
@@ -2191,6 +2227,19 @@ class TestConfig:
 
         result = runner.invoke(app, ["--profile", "nope", "config", "show"])
         assert result.exit_code == 2
+
+    @pytest.mark.unit
+    def test_global_profile_option_unknown_json(self, tmp_path, monkeypatch):
+        """JSON 模式下未知 --profile 也要输出 CONFIG_ERROR 信封,不能只留 stderr 文本"""
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", tmp_path)
+
+        result = runner.invoke(app, ["--format", "json", "--profile", "nope", "list"])
+        assert result.exit_code == 2
+        data = json.loads(result.output)
+        assert data["ok"] is False
+        assert data["error"]["type"] == "CONFIG_ERROR"
+        assert "config list" in data["error"]["hint"]
 
     @pytest.mark.unit
     def test_request_without_config(self, tmp_path, monkeypatch):

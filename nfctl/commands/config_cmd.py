@@ -6,6 +6,7 @@ import os
 
 import typer
 
+from nfctl.client import EXIT_VALIDATION, _error
 from nfctl.config import (
     ConfigError,
     get_url,
@@ -14,7 +15,14 @@ from nfctl.config import (
     set_profile_url,
     use_profile,
 )
-from nfctl.output import console, is_json, print_data, print_kv, print_table
+from nfctl.output import (
+    console,
+    is_json,
+    print_data,
+    print_kv,
+    print_result,
+    print_table,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -83,12 +91,10 @@ def set_value(
 ) -> None:
     """设置配置项。--profile 未指定时写入当前 profile（配置为空则创建 default 并设为当前）。"""
     if key != "url":
-        msg = f"未知配置项: {key}（目前仅支持 url）"
-        if is_json():
-            print_data({"error": msg})
-        else:
-            console.print(f"[red]{msg}[/red]")
-        raise typer.Exit(2)
+        print_result(
+            _error("VALIDATION_ERROR", f"未知配置项: {key}（目前仅支持 url）"),
+            EXIT_VALIDATION,
+        )
 
     _, current = list_profiles()
     target = profile or current or "default"
@@ -109,11 +115,7 @@ def use(
     try:
         use_profile(name)
     except ConfigError as e:
-        if is_json():
-            print_data({"error": str(e)})
-        else:
-            console.print(f"[red]{e}[/red]")
-        raise typer.Exit(2) from e
+        print_result(_error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION)
 
     if is_json():
         print_data({"current": name})
@@ -167,11 +169,7 @@ def remove(
     try:
         remove_profile(name)
     except ConfigError as e:
-        if is_json():
-            print_data({"error": str(e)})
-        else:
-            console.print(f"[red]{e}[/red]")
-        raise typer.Exit(2) from e
+        print_result(_error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION)
 
     if is_json():
         print_data({"removed": name})

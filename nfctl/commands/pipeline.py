@@ -7,7 +7,7 @@ from typing import Any
 
 import typer
 
-from nfctl.client import EXIT_ERROR, AgentClient
+from nfctl.client import EXIT_VALIDATION, AgentClient, _error
 from nfctl.output import (
     console,
     format_local_time,
@@ -96,15 +96,14 @@ def get_pipeline(
     match = next((p for p in data if p.get("pipeline_name") == pipeline_name), None)
 
     if match is None:
+        # 退出码与 client 层 404/NOT_FOUND 的映射(EXIT_VALIDATION)保持一致
         print_result(
-            {
-                "ok": False,
-                "error": {
-                    "type": "NOT_FOUND",
-                    "message": f"Pipeline '{pipeline_name}' 不存在",
-                },
-            },
-            EXIT_ERROR,
+            _error(
+                "NOT_FOUND",
+                f"Pipeline '{pipeline_name}' 不存在",
+                hint="使用 nfctl pipeline list 查看全部配置",
+            ),
+            EXIT_VALIDATION,
         )
         return  # print_result 已退出,此处仅供类型收窄
 

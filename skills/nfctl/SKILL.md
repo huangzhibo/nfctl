@@ -45,6 +45,7 @@ description: "用 nfctl CLI 投递、查询、诊断 Nextflow 分析，并操作
 
 | type | 归类 | 典型处理 |
 |------|------|----------|
+| `CONFIG_ERROR` | 本地配置问题（未配置 server 地址 / profile 不存在） | 按 `hint`：`nfctl config set url <地址>` 或 `nfctl config list` |
 | `NETWORK_ERROR` / `TIMEOUT` | 本地连接问题 | 检查 `NFCTL_URL`、服务是否运行 |
 | `NOT_FOUND` | workflow 不存在 | `nfctl list` 确认 |
 | `LAUNCH_DIR_BUSY` / `WORKFLOW_ID_EXISTS` / `CONFLICT` | 409 冲突（分析进行中、重复提交） | 按 `hint`；确需重跑先 `cancel` 再 `resume` |

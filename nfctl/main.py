@@ -9,8 +9,9 @@ from importlib.metadata import version as _pkg_version
 
 import typer
 
-from nfctl.config import apply_profile_option, list_profiles
-from nfctl.output import OutputFormat, apply_options
+from nfctl.client import EXIT_VALIDATION, _error
+from nfctl.config import ConfigError, apply_profile_option, get_url
+from nfctl.output import OutputFormat, apply_options, print_result
 
 app = typer.Typer(
     name="nfctl",
@@ -57,10 +58,12 @@ def main(
     """nf-server CLI"""
     apply_options(fmt=format, jq=jq)
     if profile:
-        profiles, _ = list_profiles()
-        if profile not in profiles:
-            typer.echo(f"profile '{profile}' 不存在", err=True)
-            raise typer.Exit(2)
+        # 未知 profile 快速失败;错误文案复用 get_url 的 ConfigError,
+        # 信封与退出码同 client 层的 CONFIG_ERROR 口径
+        try:
+            get_url(profile)
+        except ConfigError as e:
+            print_result(_error("CONFIG_ERROR", str(e), hint=e.hint), EXIT_VALIDATION)
     apply_profile_option(profile)
 
     app._quiet = quiet  # type: ignore[attr-defined]
