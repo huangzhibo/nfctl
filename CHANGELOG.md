@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0](https://github.com/huangzhibo/nfctl/compare/v1.2.0...v1.3.0) (2026-07-17)
+
+
+### 新功能
+
+* **cli:** --verbose 输出 HTTP 调试行,overview JSON 补 reconciler 信号 ([186d7d0](https://github.com/huangzhibo/nfctl/commit/186d7d0a2b830344bdef1c68e10229291ed5c75c))
+
+
+### 修复
+
+* **cli:** pipeline 超时参数帮助文本同步服务端新默认值(停滞 72h、执行上限 120h) ([e3d6e44](https://github.com/huangzhibo/nfctl/commit/e3d6e443e228988f248ecf6c2cd7f9c6a4174da9))
+* **cli:** 错误路径统一 ok:false 信封与退出码,Agent 不再把失败读成成功 ([8d32451](https://github.com/huangzhibo/nfctl/commit/8d32451806b3fc8abcfc3b44f1ba4a978a59aa65))
+
+
+### 文档
+
+* **claude:** 模块表补齐 archive 命令组/progress/config 多 profile,与代码对齐 ([c7503a1](https://github.com/huangzhibo/nfctl/commit/c7503a1faa5baee4510a69e40170098ea2982a91))
+* 清除 localhost 默认值等过期描述,补 profile 上手与 -v 说明 ([a0e5846](https://github.com/huangzhibo/nfctl/commit/a0e58465b10cc22a7b4b7b37be77957c1015a1c7))
+
 ## [1.2.0](https://github.com/huangzhibo/nfctl/compare/v1.1.0...v1.2.0) (2026-07-13)
 
 
