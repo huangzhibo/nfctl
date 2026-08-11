@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/huangzhibo/nfctl/compare/v1.3.0...v2.0.0) (2026-08-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pipeline:** --archive-dirs is removed from pipeline create/update; nfctl 2.x requires nf-server 4.x.
+
+### 新功能
+
+* **pipeline:** remove archive directory selection ([#9](https://github.com/huangzhibo/nfctl/issues/9)) ([4054a7b](https://github.com/huangzhibo/nfctl/commit/4054a7b4e87a5263729984d6faeb8cbc0b26906f))
+
 ## [1.3.0](https://github.com/huangzhibo/nfctl/compare/v1.2.0...v1.3.0) (2026-07-17)
 
 
