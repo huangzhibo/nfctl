@@ -30,7 +30,6 @@ def _detail_items(d: dict, time_key: str) -> list[tuple[str, Any]]:
         ("feishu_webhook", d.get("feishu_webhook")),
         ("archive_enabled", d.get("archive_enabled")),
         ("large_file_threshold", d.get("large_file_threshold")),
-        ("archive_dirs", d.get("archive_dirs")),
         ("archive_delay_hours", d.get("archive_delay_hours")),
         ("stall_timeout_hours", d.get("stall_timeout_hours")),
         ("execution_timeout_hours", d.get("execution_timeout_hours")),
@@ -58,7 +57,6 @@ def list_pipelines() -> None:
             ("max_concurrent", "Max Concurrent"),
             ("enabled", "Enabled"),
             ("archive_enabled", "Archive"),
-            ("archive_dirs", "Archive Dirs"),
             ("archive_delay_hours", "Delay(h)"),
             ("large_file_threshold", "Migrate(threshold)"),
         ],
@@ -116,15 +114,12 @@ def create_pipeline(
     archive: bool = typer.Option(
         False,
         "--archive/--no-archive",
-        help="是否启用归档（打包后删除原目录，延迟执行）",
+        help="是否启用归档（延迟打包并移走 launch_dir 下所有一级非隐藏真实目录）",
     ),
     large_file_threshold: str | None = typer.Option(
         None,
         "--large-file-threshold",
         help="大文件迁移阈值兼 migrate 开关（find -size 格式，如 500M；不设=不迁移）",
-    ),
-    archive_dirs: str | None = typer.Option(
-        None, "--archive-dirs", help="待迁移/归档目录，逗号分隔，相对 launch_dir"
     ),
     archive_delay_hours: int | None = typer.Option(
         None, "--archive-delay-hours", help="归档延迟小时数（不设=服务端默认 72）"
@@ -150,8 +145,6 @@ def create_pipeline(
         body["feishu_webhook"] = feishu_webhook
     if large_file_threshold is not None:
         body["large_file_threshold"] = large_file_threshold
-    if archive_dirs is not None:
-        body["archive_dirs"] = archive_dirs
     if archive_delay_hours is not None:
         body["archive_delay_hours"] = archive_delay_hours
     if stall_timeout_hours is not None:
@@ -181,15 +174,14 @@ def update_pipeline(
         None, "--feishu-webhook", help="飞书机器人 webhook URL"
     ),
     archive: bool | None = typer.Option(
-        None, "--archive/--no-archive", help="是否启用归档"
+        None,
+        "--archive/--no-archive",
+        help="是否启用归档（范围固定为 launch_dir 下所有一级非隐藏真实目录）",
     ),
     large_file_threshold: str | None = typer.Option(
         None,
         "--large-file-threshold",
         help="大文件迁移阈值兼 migrate 开关（如 500M；传空串 '' = 关闭迁移）",
-    ),
-    archive_dirs: str | None = typer.Option(
-        None, "--archive-dirs", help="待迁移/归档目录，逗号分隔，相对 launch_dir"
     ),
     archive_delay_hours: int | None = typer.Option(
         None, "--archive-delay-hours", help="归档延迟小时数"
@@ -213,8 +205,6 @@ def update_pipeline(
         body["archive_enabled"] = archive
     if large_file_threshold is not None:
         body["large_file_threshold"] = large_file_threshold
-    if archive_dirs is not None:
-        body["archive_dirs"] = archive_dirs
     if archive_delay_hours is not None:
         body["archive_delay_hours"] = archive_delay_hours
     if stall_timeout_hours is not None:
