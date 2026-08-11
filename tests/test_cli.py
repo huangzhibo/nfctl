@@ -1599,6 +1599,15 @@ class TestArchiveResume:
 
 class TestPipeline:
     @pytest.mark.unit
+    def test_archive_dirs_option_removed(self):
+        result = runner.invoke(
+            app, ["pipeline", "create", "WES", "--archive-dirs", "work"]
+        )
+
+        assert result.exit_code == 2
+        assert "No such option" in result.output
+
+    @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_pipeline_list_json(self, mock_client_class):
         mock_client = MagicMock()
@@ -1667,7 +1676,6 @@ class TestPipeline:
                     "feishu_webhook": None,
                     "archive_enabled": True,
                     "large_file_threshold": None,
-                    "archive_dirs": "work",
                     "archive_delay_hours": 72,
                     "created_at": "2026-06-24T02:09:39",
                     "updated_at": "2026-06-24T03:00:00",
@@ -1686,10 +1694,10 @@ class TestPipeline:
         result = runner.invoke(app, ["pipeline", "get", "ngm"])
 
         assert result.exit_code == 0
-        # 从 list 筛出 ngm,详情含归档目录与 updated_at;不渲染其它 pipeline
+        # 从 list 筛出 ngm,详情含归档策略与 updated_at;不渲染其它 pipeline
         assert "ngm" in result.output
-        assert "work" in result.output
-        assert "archive_dirs" in result.output
+        assert "archive_enabled" in result.output
+        assert "archive_dirs" not in result.output
         assert "updated_at" in result.output
         assert "WGS" not in result.output
 
@@ -1928,7 +1936,6 @@ class TestPipeline:
                 "enabled": True,
                 "archive_enabled": True,
                 "large_file_threshold": "500M",
-                "archive_dirs": "work,results",
                 "archive_delay_hours": 48,
                 "created_at": "2026-04-16T10:00:00",
                 "updated_at": "2026-04-16T10:00:00",
@@ -1947,8 +1954,6 @@ class TestPipeline:
                 "--archive",
                 "--large-file-threshold",
                 "500M",
-                "--archive-dirs",
-                "work,results",
                 "--archive-delay-hours",
                 "48",
             ],
@@ -1958,7 +1963,7 @@ class TestPipeline:
         body = mock_client.request.call_args.kwargs["json"]
         assert body["archive_enabled"] is True
         assert body["large_file_threshold"] == "500M"
-        assert body["archive_dirs"] == "work,results"
+        assert "archive_dirs" not in body
         assert body["archive_delay_hours"] == 48
 
     @pytest.mark.unit

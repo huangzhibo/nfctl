@@ -2,6 +2,8 @@
 
 nf-server CLI — 面向生信工程师和 AI Agent 的命令行工具。
 
+nfctl 2.x 对应 nf-server 4.x；旧版 server/client 的 API 与 pipeline 归档配置契约不兼容。
+
 ## 安装
 
 ```bash
@@ -74,6 +76,9 @@ nfctl pipeline list/get/create/update/delete   # Pipeline 配置（并发/归档
 nfctl config show/set/use/list/remove          # 配置与多 profile 管理
 nfctl -v <命令>                                # 调试：stderr 显示 HTTP 请求/状态/耗时
 ```
+
+启用 pipeline 归档后，范围固定为 `launch_dir` 下所有一级非隐藏真实目录；不能按
+pipeline 选择目录。大文件迁移与归档使用同一范围。
 
 ## 手动 submit 场景
 

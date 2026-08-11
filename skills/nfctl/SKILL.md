@@ -60,8 +60,10 @@ description: "用 nfctl CLI 投递、查询、诊断 Nextflow 分析，并操作
 
 ## Core Concepts
 
+nfctl 2.x 对应 nf-server 4.x；旧版 server/client 的 pipeline 归档配置契约不兼容。
+
 - **Workflow**：一次 Nextflow 分析流程实例，由 `workflow_id` 标识。`workflow_id` 从 `launch_dir/run.sh` 中的 `TOWER_WORKFLOW_ID=xxx` 读取。
-- **Pipeline**：流程类型（如 `WGS`、`16s`、`ampliseq`），按流程配置并发（`max_concurrent`）、飞书通知（`feishu_webhook`）、后处理归档/迁移策略（`archive_enabled` / `large_file_threshold` / `archive_dirs` / `archive_delay_hours`）、超时覆盖（`stall_timeout_hours` / `execution_timeout_hours`）。未建配置行的流程：归档与迁移均关，后处理 `skipped`。
+- **Pipeline**：流程类型（如 `WGS`、`16s`、`ampliseq`），按流程配置并发（`max_concurrent`）、飞书通知（`feishu_webhook`）、后处理归档/迁移策略（`archive_enabled` / `large_file_threshold` / `archive_delay_hours`）、超时覆盖（`stall_timeout_hours` / `execution_timeout_hours`）。归档范围固定为 `launch_dir` 下所有一级非隐藏真实目录；未建配置行的流程：归档与迁移均关，后处理 `skipped`。
 - **Task**：Nextflow 子任务（process 的一次执行），由 `task_id` 标识；运行态见 `status` 字段（CACHED / COMPLETED / FAILED 等）。
 - **Cached task**：Nextflow `-resume` 命中缓存、本次未真正执行、直接复用历史 workdir 的 task。聚合指标里会**保留其首次运行时的 used/requested**（不是 0）。调优本次资源分配请用 `resources --exclude-cached`。
 - **两轴生命周期**（对外契约，server 派生）：
@@ -114,7 +116,7 @@ config    set KEY VALUE | show | use NAME | list | remove NAME   # 多 profile �
 pipeline  list | get NAME | create NAME [选项] | update NAME [选项] | delete NAME
           选项: -m N | --enabled/--disabled | --feishu-webhook URL
                 --archive/--no-archive | --large-file-threshold T(如 500M;update 传 '' 关迁移)
-                --archive-dirs D(逗号分隔,相对 launch_dir) | --archive-delay-hours H
+                --archive-delay-hours H
                 --stall-timeout-hours H | --execution-timeout-hours H
 ```
 
