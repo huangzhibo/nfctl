@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/huangzhibo/nfctl/compare/v2.0.0...v2.1.0) (2026-08-12)
+
+
+### 新功能
+
+* **cli:** add archive start command ([9e74b82](https://github.com/huangzhibo/nfctl/commit/9e74b8214b55b57bb0bf7e652116da56838c1694))
+
 ## [2.0.0](https://github.com/huangzhibo/nfctl/compare/v1.3.0...v2.0.0) (2026-08-11)
 
 
