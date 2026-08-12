@@ -63,7 +63,8 @@ nfctl delete <id>                                        # 删除分析（succee
 
 ```bash
 nfctl archive status <id>                # 归档信息（产物位置/倒计时）+ 最近一次解压任务状态
-nfctl archive now <id>                   # 跳过归档等待期，立即开始归档（仅"等待归档"阶段可用）
+nfctl archive start <id>                 # 立即启动归档（支持 skipped/等待归档；只归档、不迁移）
+nfctl archive now <id>                   # start 的 deprecated 兼容别名
 nfctl archive resume <id>                # 恢复失败/取消的归档或后处理（分析须已成功）
 nfctl archive restore <id> [--wait]      # 解压归档产物回 launch_dir 原位（大归档可达小时级）
 nfctl archive cancel <id>                # 仅取消后处理/归档，保留分析结果

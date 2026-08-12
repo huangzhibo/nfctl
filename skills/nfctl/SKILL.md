@@ -106,7 +106,8 @@ delete    WORKFLOW_ID                    # 仅 failed/cancelled 可删；succeed
 
 # 归档/后处理
 archive status  WORKFLOW_ID              # 归档轴状态（产物位置/倒计时）+ 最近一次解压任务
-archive now     WORKFLOW_ID              # 跳过归档等待期，立即开始归档（仅 archive_wait 阶段可用）
+archive start   WORKFLOW_ID              # 立即启动归档（支持 skipped/archive_wait；只归档、不迁移）
+archive now     WORKFLOW_ID              # start 的 deprecated 兼容别名
 archive resume  WORKFLOW_ID              # 恢复失败/取消的归档或后处理（分析须已成功）
 archive restore WORKFLOW_ID [--wait]     # 解压归档产物回 launch_dir 原位（进度用 archive status 查）
 archive cancel  WORKFLOW_ID [-r REASON]  # 仅取消归档，保留分析结果（LIMS 仍 100%）
@@ -193,8 +194,8 @@ nfctl -f json archive status <workflow_id>
 # 已归档数据需要回看/续跑时：解压回 launch_dir 原位（大归档可达小时级，--wait 阻塞轮询到完成）
 nfctl -f json archive restore <workflow_id> --wait
 
-# 不想等归档延迟到期：立即开始归档（仅 pp_phase=archive_wait 时可用）
-nfctl -f json archive now <workflow_id>
+# 立即开始归档：支持 skipped 或 archive_wait，只归档、不执行 migrate
+nfctl -f json archive start <workflow_id>
 ```
 
 ### 批量投递（并发边界）

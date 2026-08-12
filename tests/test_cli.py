@@ -1507,11 +1507,33 @@ class TestArchiveStatus:
         assert "7001" in result.output
 
 
-class TestArchiveNow:
+class TestArchiveStartCompatibility:
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_archive_start_hits_endpoint(self, mock_client_class):
+        """新命令 archive start 走 /archive/start。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "workflow_id": "wf-001",
+                "archive_eligible_after": "2026-08-12T10:00:00+00:00",
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(app, ["--format", "json", "archive", "start", "wf-001"])
+
+        assert result.exit_code == 0
+        url = mock_client.request.call_args.args[1]
+        assert url.endswith("/workflow/wf-001/archive/start")
+
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_archive_now_hits_endpoint(self, mock_client_class):
-        """archive now 走 /archive/now,跳过归档等待期。"""
+        """兼容命令 archive now 仍走旧 /archive/now。"""
         mock_client = MagicMock()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)

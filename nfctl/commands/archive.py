@@ -1,5 +1,5 @@
 """
-归档/后处理操作命令组：archive resume / restore / status / cancel
+归档/后处理操作命令组：archive start / resume / restore / status / cancel
 
 归档专属操作的统一归宿,与分析主体操作(resume/cancel)分开,
 避免"resume 会不会重跑分析"的歧义。
@@ -43,22 +43,41 @@ def resume(
     sys.exit(code)
 
 
-@app.command("now")
-def now(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
-) -> None:
-    """跳过归档等待期，立即开始归档（仅"等待归档"阶段可用）"""
+def _request_archive_start(workflow_id: str, endpoint: str, *, legacy: bool) -> None:
+    """start/now 兼容入口共用的请求与输出。"""
     client = AgentClient()
-    envelope, code = client.post(f"/workflow/{workflow_id}/archive/now")
+    envelope, code = client.post(f"/workflow/{workflow_id}/archive/{endpoint}")
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
 
-    console.print(
-        f"[green]Archive now:[/green] {workflow_id} "
-        f"等待期已跳过,将于下个对账周期(约 1 分钟内)开始归档"
-    )
+    if legacy:
+        console.print(
+            f"[green]Archive now:[/green] {workflow_id} "
+            f"等待期已跳过,将于下个对账周期(约 1 分钟内)开始归档"
+        )
+    else:
+        console.print(
+            f"[green]Archive started:[/green] {workflow_id} "
+            f"将于下个对账周期(约 1 分钟内)开始归档"
+        )
     sys.exit(code)
+
+
+@app.command("start")
+def start(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+) -> None:
+    """立即启动归档（支持 skipped 或等待归档；只归档、不迁移）"""
+    _request_archive_start(workflow_id, "start", legacy=False)
+
+
+@app.command("now")
+def now(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+) -> None:
+    """兼容旧客户端的别名；新用法请改用 nfctl archive start"""
+    _request_archive_start(workflow_id, "now", legacy=True)
 
 
 @app.command("restore")
