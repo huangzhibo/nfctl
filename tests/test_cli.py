@@ -320,6 +320,156 @@ class TestList:
         assert "status" not in sent_params
         assert "display_status" not in sent_params
 
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_exact_launch_dir_normalizes_path_and_fetches_complete_history(
+        self, mock_client_class, tmp_path
+    ):
+        """-L 精确过滤并自动取全，输出当前目录占用者。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "total": 1,
+                "page": 1,
+                "page_size": 20,
+                "items": [
+                    {
+                        "workflow_id": "wf-running",
+                        "analysis_status": "running",
+                        "launch_dir_occupied": True,
+                        "pp_status": "not_started",
+                        "progress_percent": 1.0,
+                        "pipeline_name": "rna-seq",
+                        "env": "prod",
+                        "project_sn": "BQ-TEST",
+                        "updated_at": "2026-08-18T05:00:00+00:00",
+                    }
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["list", "-L", str(tmp_path / "child" / "..")],
+            env={"COLUMNS": "220"},
+        )
+
+        assert result.exit_code == 0
+        params = mock_client.request.call_args.kwargs["params"]
+        assert params["launch_dir"] == str(tmp_path.resolve())
+        assert params["page"] == 1
+        assert "wf-running" in result.output
+        assert "当前占用" in result.output
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_grouped_by_launch_dir(self, mock_client_class):
+        """目录分页、组内完整 workflow 历史由 launch-dirs 资源返回。"""
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200,
+            {
+                "total": 1,
+                "page": 1,
+                "page_size": 20,
+                "items": [
+                    {
+                        "launch_dir": "/work/prod/BQ-TEST/run1",
+                        "workflow_count": 2,
+                        "storage_state": "materialized",
+                        "archive_workflow_id": "wf-old",
+                        "archive_path": "/archive/run1",
+                        "updated_at": "2026-08-18T05:00:00+00:00",
+                        "occupied_workflow_id": "wf-running",
+                        "occupied_stage": "analysis",
+                        "workflows": [
+                            {
+                                "workflow_id": "wf-running",
+                                "analysis_status": "running",
+                                "pp_status": "not_started",
+                                "progress_percent": 1.0,
+                                "pipeline_name": "rna-seq",
+                                "env": "prod",
+                                "project_sn": "BQ-TEST",
+                                "updated_at": "2026-08-18T05:00:00+00:00",
+                            },
+                            {
+                                "workflow_id": "wf-old",
+                                "analysis_status": "succeeded",
+                                "pp_status": "succeeded",
+                                "pp_phase": "archive",
+                                "progress_percent": 100.0,
+                                "pipeline_name": "rna-seq",
+                                "env": "prod",
+                                "project_sn": "BQ-TEST",
+                                "updated_at": "2026-08-07T12:00:00+00:00",
+                            },
+                        ],
+                    }
+                ],
+            },
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            ["list", "--group-by", "launch-dir"],
+            env={"COLUMNS": "220"},
+        )
+
+        assert result.exit_code == 0
+        assert "/work/prod/BQ-TEST/run1" in result.output
+        assert "wf-running" in result.output
+        assert "wf-old" in result.output
+        assert "State materialized" in result.output
+        assert "归档记录 wf-old" in result.output
+        call_args = mock_client.request.call_args
+        assert call_args.args == ("GET", "/launch-dirs")
+        assert call_args.kwargs["params"]["sort_by"] == "updated_at"
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_launch_dir_storage_filters(self, mock_client_class):
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.request.return_value = _mock_response(
+            200, {"total": 0, "page": 1, "page_size": 20, "items": []}
+        )
+        mock_client_class.return_value = mock_client
+
+        result = runner.invoke(
+            app,
+            [
+                "list",
+                "--group-by",
+                "launch-dir",
+                "--state",
+                "materialized",
+                "--rearchive-due",
+            ],
+        )
+
+        assert result.exit_code == 0
+        params = mock_client.request.call_args.kwargs["params"]
+        assert params["storage_state"] == "materialized"
+        assert params["rearchive_due"] is True
+
+    @pytest.mark.unit
+    @patch("nfctl.client.httpx.Client")
+    def test_list_rejects_unknown_group(self, mock_client_class):
+        result = runner.invoke(app, ["list", "--group-by", "pipeline"])
+
+        assert result.exit_code == 2
+        assert "launch-dir" in result.output
+        mock_client_class.assert_not_called()
+
 
 class TestStatus:
     @pytest.mark.unit

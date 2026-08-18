@@ -39,6 +39,12 @@ nfctl list --pipeline WGS --env prod     # 按 Pipeline / 环境过滤
 nfctl list --project-sn P2026001         # 按 LIMS 项目编号过滤
 nfctl list --data-number D001            # 按数据编号过滤
 nfctl list --query sample1               # 按 workflow_id / launch_dir / data_number 搜索
+nfctl list --launch-dir .                 # 精确查看当前启动目录的完整 workflow 历史和占用者
+nfctl list --group-by launch-dir          # 最近启动目录，按目录分页且组内列出全部 workflow
+nfctl list --group-by launch-dir --all    # 全部启动目录及其全部 workflow
+nfctl list --group-by launch-dir --state unknown,materialized,partial --all  # 尚不能确认最终归档
+nfctl list --group-by launch-dir --state archived --all      # 已归档并释放工作盘
+nfctl list --group-by launch-dir --rearchive-due --all       # restore 后已到重新归档时间
 nfctl status <id>                        # 分析详情
 nfctl progress <id>                      # 进度（含 process 级别明细）
 nfctl tasks <id> [--status failed]       # 子任务列表
@@ -47,6 +53,11 @@ nfctl task <id> <task_id>                # 子任务详情
 nfctl log <id> [--grep ERROR]            # 日志查看
 nfctl resources <id>                     # 资源统计
 ```
+
+`--group-by launch-dir` 的分页单位是启动目录，同一目录的 workflow 不会被拆到不同页。
+`storage_state=archived` 表示归档包已生成且一级非隐藏数据目录已移出；
+`materialized` 表示目录正在工作盘上使用，`partial` 表示存储操作可能只完成一部分，
+`unknown` 表示存量或外部操作导致当前状态无法可靠判断。`--json` 返回相同目录状态结构。
 
 ### 管理
 

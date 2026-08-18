@@ -2,10 +2,14 @@
 查询命令：overview / list / status / tasks / log / resources
 """
 
+from pathlib import Path
+
 import typer
+from rich.markup import escape
 
 from nfctl.client import AgentClient
 from nfctl.output import (
+    console,
     err_console,
     format_local_time,
     is_json,
@@ -13,6 +17,78 @@ from nfctl.output import (
     print_result,
     print_table,
 )
+
+_WORKFLOW_COLUMNS = [
+    ("workflow_id", "ID"),
+    ("analysis_status", "Status"),
+    ("progress_percent", "Progress"),
+    ("archive", "Archive"),
+    ("pipeline_name", "Pipeline"),
+    ("env", "Env"),
+    ("project_sn", "ProjectSN"),
+    ("updated_at", "Updated"),
+]
+
+
+def _prepare_workflow_items(items: list[dict]) -> None:
+    """把 workflow API 字段转换成人类表格字段。"""
+    for item in items:
+        item["progress_percent"] = f"{item.get('progress_percent', 0):.0f}%"
+        if item.get("updated_at"):
+            item["updated_at"] = format_local_time(item["updated_at"])
+        # env 为空表示内部流程,不向 LIMS 推送进度
+        if not item.get("env"):
+            item["env"] = "internal"
+        # 归档轴列:推进中显示阶段(migrate/archive_wait/archive),终态显示
+        # pp_status(succeeded/failed/cancelled/skipped),未开始显示 -
+        pp_status_value = item.get("pp_status")
+        if pp_status_value in ("not_started", "running"):
+            item["archive"] = item.get("pp_phase") or "-"
+        else:
+            item["archive"] = pp_status_value or "-"
+
+
+def _fetch_all_pages(
+    client: AgentClient,
+    path: str,
+    params: dict,
+    *,
+    unit: str,
+) -> tuple[dict, int]:
+    """遍历到 API total，不用固定页数上限截断显式的 --all 请求。"""
+    all_items: list[dict] = []
+    current_page = 1
+    total = 0
+    while True:
+        envelope, code = client.get(path, page=current_page, **params)
+        if not envelope["ok"]:
+            print_result(envelope, code)
+        data = envelope["data"]
+        total = data.get("total", 0)
+        page_items = data.get("items", [])
+        if not page_items:
+            break
+        all_items.extend(page_items)
+        if not is_json():
+            err_console.print(
+                f"[dim][pagination] 第 {current_page} 页，"
+                f"已获取 {len(all_items)} / {total} {unit}[/dim]"
+            )
+        if len(all_items) >= total:
+            break
+        current_page += 1
+    return (
+        {
+            "ok": True,
+            "data": {
+                "items": all_items,
+                "total": total,
+                "page": 1,
+                "page_size": len(all_items),
+            },
+        },
+        0,
+    )
 
 
 def overview() -> None:
@@ -102,15 +178,55 @@ def list_workflows(
     q: str | None = typer.Option(
         None, "--query", "-q", help="搜索 workflow_id/launch_dir/data_number"
     ),
+    launch_dir: str | None = typer.Option(
+        None,
+        "--launch-dir",
+        "-L",
+        help="按规范化启动目录精确过滤；相对路径（如 .）会转成绝对路径",
+    ),
+    group_by: str | None = typer.Option(
+        None,
+        "--group-by",
+        help="分组展示（当前仅支持 launch-dir）",
+    ),
+    storage_state: str | None = typer.Option(
+        None,
+        "--state",
+        help="目录存储状态（unknown/materialized/archived/partial）",
+    ),
+    rearchive_due: bool = typer.Option(
+        False,
+        "--rearchive-due",
+        help="仅显示 restore 后已到重新归档时间的目录",
+    ),
     n: int = typer.Option(20, "-n", help="每页条数"),
     page: int = typer.Option(1, "--page", help="页码"),
-    all_pages: bool = typer.Option(
-        False, "--all", help="自动遍历分页（最多 50 页，超出静默截断）"
+    all_pages: bool = typer.Option(False, "--all", help="自动遍历全部分页"),
+    sort_by: str | None = typer.Option(
+        None,
+        "--sort",
+        help="排序字段（普通列表默认 created_at，目录分组默认 updated_at）",
     ),
-    sort_by: str = typer.Option("created_at", "--sort", help="排序字段"),
     sort_order: str = typer.Option("desc", "--sort-order", help="排序方向 (asc/desc)"),
 ) -> None:
     """分析列表"""
+    if group_by not in (None, "launch-dir"):
+        raise typer.BadParameter(
+            "当前仅支持 launch-dir",
+            param_hint="--group-by",
+        )
+
+    normalized_launch_dir = None
+    if launch_dir is not None:
+        normalized_launch_dir = str(Path(launch_dir).expanduser().resolve(strict=False))
+
+    grouped = group_by == "launch-dir"
+    if not grouped and (storage_state is not None or rearchive_due):
+        raise typer.BadParameter(
+            "--state/--rearchive-due 仅适用于 --group-by launch-dir",
+            param_hint="--group-by",
+        )
+    path = "/launch-dirs" if grouped else "/workflow/list"
     client = AgentClient()
     params = {
         # 两轴过滤,与表格 Status/Archive 列同口径(server 端 SQL 谓词,
@@ -121,76 +237,103 @@ def list_workflows(
         "env": env,
         "project_sn": project_sn,
         "data_number": data_number,
+        "launch_dir": normalized_launch_dir,
         "q": q,
         "page_size": n,
-        "sort_by": sort_by,
+        "sort_by": sort_by or ("updated_at" if grouped else "created_at"),
         "sort_order": sort_order,
     }
+    if grouped:
+        params["storage_state"] = storage_state
+        params["rearchive_due"] = True if rearchive_due else None
 
-    if all_pages:
-        all_items: list[dict] = []
-        current_page = 1
-        total = None
-        while current_page <= 50:
-            envelope, code = client.get("/workflow/list", page=current_page, **params)
-            if not envelope["ok"]:
-                print_result(envelope, code)
-            data = envelope["data"]
-            page_items = data.get("items", [])
-            if not page_items:
-                break
-            all_items.extend(page_items)
-            total = data.get("total", 0)
-            if not is_json():
-                err_console.print(
-                    f"[dim][pagination] 第 {current_page} 页，已获取 {len(all_items)} / {total} 条[/dim]"
-                )
-            if len(all_items) >= total:
-                break
-            current_page += 1
-        envelope = {
-            "ok": True,
-            "data": {"items": all_items, "total": total, "page": 1, "page_size": total},
-        }
-        code = 0
+    # 精确目录查询的语义就是完整历史，自动翻页避免较老的占用/归档记录被截掉。
+    fetch_all = all_pages or (normalized_launch_dir is not None and not grouped)
+    if fetch_all:
+        envelope, code = _fetch_all_pages(
+            client,
+            path,
+            params,
+            unit="个目录" if grouped else "条",
+        )
     else:
-        envelope, code = client.get("/workflow/list", page=page, **params)
+        envelope, code = client.get(path, page=page, **params)
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
 
     data = envelope["data"]
-    items = data.get("items", [])
-    for item in items:
-        item["progress_percent"] = f"{item.get('progress_percent', 0):.0f}%"
-        if item.get("updated_at"):
-            item["updated_at"] = format_local_time(item["updated_at"])
-        # env 为空表示内部流程,不向 LIMS 推送进度
-        if not item.get("env"):
-            item["env"] = "internal"
-        # 归档轴列:推进中显示阶段(migrate/archive_wait/archive),终态显示
-        # pp_status(succeeded/failed/cancelled/skipped),未开始显示 -
-        pp_status_value = item.get("pp_status")
-        if pp_status_value in ("not_started", "running"):
-            item["archive"] = item.get("pp_phase") or "-"
-        else:
-            item["archive"] = pp_status_value or "-"
+    if grouped:
+        _print_launch_dir_groups(data)
+        return
 
-    print_table(
-        "Workflow 列表",
-        [
-            ("workflow_id", "ID"),
-            ("analysis_status", "Status"),
-            ("progress_percent", "Progress"),
-            ("archive", "Archive"),
-            ("pipeline_name", "Pipeline"),
-            ("env", "Env"),
-            ("project_sn", "ProjectSN"),
-            ("updated_at", "Updated"),
-        ],
-        items,
-        total=data.get("total"),
-    )
+    items = data.get("items", [])
+    _prepare_workflow_items(items)
+    columns = list(_WORKFLOW_COLUMNS)
+    if normalized_launch_dir is not None:
+        columns.insert(4, ("launch_dir_occupied", "Occupied"))
+    print_table("Workflow 列表", columns, items, total=data.get("total"))
+
+    if normalized_launch_dir is not None:
+        occupied = next(
+            (item for item in items if item.get("launch_dir_occupied")), None
+        )
+        if occupied:
+            stage = (
+                "analysis"
+                if occupied.get("analysis_status") in ("queued", "running")
+                else occupied.get("archive", "post_process")
+            )
+            console.print(
+                f"[yellow]当前占用:[/yellow] "
+                f"{escape(str(occupied.get('workflow_id')))} ({escape(str(stage))})"
+            )
+        else:
+            console.print("[green]当前无活跃 workflow 占用[/green]")
+
+
+def _print_launch_dir_groups(data: dict) -> None:
+    groups = data.get("items", [])
+    console.print("[bold]LaunchDir 列表[/bold]")
+    for group in groups:
+        workflows = group.get("workflows", [])
+        _prepare_workflow_items(workflows)
+
+        launch_dir = escape(str(group.get("launch_dir", "-")))
+        console.print(f"\n[bold cyan]{launch_dir}[/bold cyan]")
+        occupied_id = group.get("occupied_workflow_id")
+        if occupied_id:
+            occupied = (
+                f"占用 {escape(str(occupied_id))} "
+                f"({escape(str(group.get('occupied_stage') or 'unknown'))})"
+            )
+        else:
+            occupied = "无活跃占用"
+
+        storage_state = escape(str(group.get("storage_state") or "unknown"))
+        archive_id = group.get("archive_workflow_id")
+        if archive_id:
+            archive = f"归档记录 {escape(str(archive_id))}"
+        else:
+            archive = "无归档记录"
+        operation = group.get("operation") or {}
+        operation_text = ""
+        if operation.get("kind"):
+            operation_text = (
+                f" · 操作 {escape(str(operation['kind']))}:"
+                f"{escape(str(operation.get('status') or 'unknown'))}"
+            )
+        updated = format_local_time(group.get("updated_at"))
+        console.print(
+            f"[dim]{group.get('workflow_count', len(workflows))} workflows · "
+            f"State {storage_state} · {occupied} · {archive}"
+            f"{operation_text} · Updated {escape(str(updated))}[/dim]"
+        )
+        print_table("", _WORKFLOW_COLUMNS, workflows)
+
+    total = data.get("total", len(groups))
+    if total > len(groups):
+        console.print(f"[dim]共 {total} 个目录，当前显示 {len(groups)} 个[/dim]")
 
 
 def status(
