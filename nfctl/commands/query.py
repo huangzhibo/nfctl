@@ -2,8 +2,6 @@
 查询命令：overview / list / status / tasks / log / resources
 """
 
-from pathlib import Path
-
 import typer
 from rich.markup import escape
 
@@ -17,12 +15,12 @@ from nfctl.output import (
     print_result,
     print_table,
 )
+from nfctl.paths import normalize_launch_dir
 
 _WORKFLOW_COLUMNS = [
     ("workflow_id", "ID"),
     ("analysis_status", "Status"),
     ("progress_percent", "Progress"),
-    ("archive", "Archive"),
     ("pipeline_name", "Pipeline"),
     ("env", "Env"),
     ("project_sn", "ProjectSN"),
@@ -39,13 +37,6 @@ def _prepare_workflow_items(items: list[dict]) -> None:
         # env 为空表示内部流程,不向 LIMS 推送进度
         if not item.get("env"):
             item["env"] = "internal"
-        # 归档轴列:推进中显示阶段(migrate/archive_wait/archive),终态显示
-        # pp_status(succeeded/failed/cancelled/skipped),未开始显示 -
-        pp_status_value = item.get("pp_status")
-        if pp_status_value in ("not_started", "running"):
-            item["archive"] = item.get("pp_phase") or "-"
-        else:
-            item["archive"] = pp_status_value or "-"
 
 
 def _fetch_all_pages(
@@ -160,11 +151,6 @@ def list_workflows(
             "与 Status 列同口径"
         ),
     ),
-    pp: str | None = typer.Option(
-        None,
-        "--pp",
-        help="归档/后处理状态过滤（逗号分隔:not_started|running|succeeded|failed|cancelled|skipped）",
-    ),
     pipeline_name: str | None = typer.Option(
         None, "--pipeline", "-p", help="Pipeline 过滤"
     ),
@@ -192,12 +178,12 @@ def list_workflows(
     storage_state: str | None = typer.Option(
         None,
         "--state",
-        help="目录存储状态（unknown/materialized/archived/partial）",
+        help="目录存储状态（unknown/materialized/archived/empty/partial）",
     ),
-    rearchive_due: bool = typer.Option(
+    archive_due: bool = typer.Option(
         False,
-        "--rearchive-due",
-        help="仅显示 restore 后已到重新归档时间的目录",
+        "--archive-due",
+        help="仅显示已到自动归档时间的目录",
     ),
     n: int = typer.Option(20, "-n", help="每页条数"),
     page: int = typer.Option(1, "--page", help="页码"),
@@ -209,7 +195,7 @@ def list_workflows(
     ),
     sort_order: str = typer.Option("desc", "--sort-order", help="排序方向 (asc/desc)"),
 ) -> None:
-    """分析列表"""
+    """列出 Workflow；--group-by launch-dir 时按目录盘点。"""
     if group_by not in (None, "launch-dir"):
         raise typer.BadParameter(
             "当前仅支持 launch-dir",
@@ -218,21 +204,18 @@ def list_workflows(
 
     normalized_launch_dir = None
     if launch_dir is not None:
-        normalized_launch_dir = str(Path(launch_dir).expanduser().resolve(strict=False))
+        normalized_launch_dir = normalize_launch_dir(launch_dir)
 
     grouped = group_by == "launch-dir"
-    if not grouped and (storage_state is not None or rearchive_due):
+    if not grouped and (storage_state is not None or archive_due):
         raise typer.BadParameter(
-            "--state/--rearchive-due 仅适用于 --group-by launch-dir",
+            "--state/--archive-due 仅适用于 --group-by launch-dir",
             param_hint="--group-by",
         )
     path = "/launch-dirs" if grouped else "/workflow/list"
     client = AgentClient()
     params = {
-        # 两轴过滤,与表格 Status/Archive 列同口径(server 端 SQL 谓词,
-        # 见 nf-server ADR-0006):显示与过滤必须同字段。
         "analysis_status": status,
-        "pp_status": pp,
         "pipeline_name": pipeline_name,
         "env": env,
         "project_sn": project_sn,
@@ -245,7 +228,7 @@ def list_workflows(
     }
     if grouped:
         params["storage_state"] = storage_state
-        params["rearchive_due"] = True if rearchive_due else None
+        params["archive_due"] = True if archive_due else None
 
     # 精确目录查询的语义就是完整历史，自动翻页避免较老的占用/归档记录被截掉。
     fetch_all = all_pages or (normalized_launch_dir is not None and not grouped)
@@ -279,11 +262,7 @@ def list_workflows(
             (item for item in items if item.get("launch_dir_occupied")), None
         )
         if occupied:
-            stage = (
-                "analysis"
-                if occupied.get("analysis_status") in ("queued", "running")
-                else occupied.get("archive", "post_process")
-            )
+            stage = "analysis"
             console.print(
                 f"[yellow]当前占用:[/yellow] "
                 f"{escape(str(occupied.get('workflow_id')))} ({escape(str(stage))})"
@@ -303,19 +282,16 @@ def _print_launch_dir_groups(data: dict) -> None:
         console.print(f"\n[bold cyan]{launch_dir}[/bold cyan]")
         occupied_id = group.get("occupied_workflow_id")
         if occupied_id:
-            occupied = (
-                f"占用 {escape(str(occupied_id))} "
-                f"({escape(str(group.get('occupied_stage') or 'unknown'))})"
-            )
+            occupied = f"占用 {escape(str(occupied_id))}"
         else:
             occupied = "无活跃占用"
 
         storage_state = escape(str(group.get("storage_state") or "unknown"))
-        archive_id = group.get("archive_workflow_id")
-        if archive_id:
-            archive = f"归档记录 {escape(str(archive_id))}"
+        plan_id = group.get("plan_workflow_id")
+        if plan_id:
+            archive = f"存储计划 {escape(str(plan_id))}"
         else:
-            archive = "无归档记录"
+            archive = "无存储计划"
         operation = group.get("operation") or {}
         operation_text = ""
         if operation.get("kind"):
@@ -347,8 +323,7 @@ def status(
         print_result(envelope, code)
 
     d = envelope["data"]
-    # 需介入时(失败/归档失败)summary 标黄承载警示——needs_action 恒等价于
-    # "summary 是带动作的那两句之一(需排查 resume / 可 archive resume 重试)",
+    # 需介入时 summary 标黄承载警示。存储问题在 launch-dir 资源中查看。
     # 单列 needs_action 行只会重复 summary,故不显示,警示用颜色不用重复文字。
     # needs_action 布尔仍在 JSON 直出,供脚本 filter/告警。
     summary = d.get("status_summary")
@@ -373,20 +348,10 @@ def status(
         items.append(("data_number", d["data_number"]))
     if d.get("data_path"):
         items.append(("data_path", d["data_path"]))
-    if d.get("pp_phase"):
-        pp = d["pp_phase"]
-        if d.get("pp_status"):
-            pp = f"{pp} ({d['pp_status']})"
-        items.append(("post_process", pp))
-    # 等待归档时显示到期自动开始时间(原始字段直出)
-    if d.get("archive_eligible_after"):
-        items.append(
-            ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
-        )
-    # error 行只在失败态显示(分析失败 / 归档失败):cancelled 的原因已在
+    # error 行只在分析失败态显示:cancelled 的原因已在
     # summary、succeeded 应无错(残留 error_message 属 server bug),都不露
     # error 行,避免"succeeded + error"自相矛盾;也防御存量残留。
-    is_failed = d.get("analysis_status") == "failed" or d.get("pp_status") == "failed"
+    is_failed = d.get("analysis_status") == "failed"
     if d.get("error_message") and is_failed:
         items.append(("error", d["error_message"]))
     if d.get("duration"):

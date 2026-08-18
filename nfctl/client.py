@@ -15,8 +15,9 @@ nf-server 错误响应顶层扁平:
     }
 
 本客户端的错误信封:
-    {"ok": False, "error": {"type": ..., "message": ..., "hint": ..., "job_id": ..., "resource_id": ...}}
+    {"ok": False, "error": {"type": ..., "message": ..., "hint": ..., "job_id": ..., "resource_id": ..., ...}}
 其中 type 优先用服务端 error_code,回退到 HTTP 状态码映射。
+服务端结构化上下文（如 conflicts / operation_id）原名保留在 error 中，供 Agent 决策。
 """
 
 import time
@@ -155,6 +156,7 @@ def _error(
     hint: str | None = None,
     resource_id: str | None = None,
     job_id: str | None = None,
+    context: dict[str, Any] | None = None,
 ) -> dict:
     """构造错误信封"""
     err: dict[str, Any] = {"type": error_type, "message": message}
@@ -164,6 +166,8 @@ def _error(
         err["resource_id"] = resource_id
     if job_id:
         err["job_id"] = job_id
+    for key, value in (context or {}).items():
+        err.setdefault(key, value)
     return {"ok": False, "error": err}
 
 
@@ -192,14 +196,25 @@ def _handle_http_error(resp: httpx.Response) -> tuple[dict, int]:
         _ERROR_CODE_EXIT[error_code] if error_code in _ERROR_CODE_EXIT else default_exit
     )
 
-    # detail 恒为字符串(旧 server 的 dict-detail / sge_job_id 解析已随硬切删除)
     detail = body.get("detail")
-    message = (
-        detail if isinstance(detail, str) and detail else f"HTTP {resp.status_code}"
-    )
+    validation_errors = _validation_errors(detail)
+    if isinstance(detail, str) and detail:
+        message = detail
+    elif validation_errors:
+        summary = "; ".join(
+            f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+            for error in validation_errors
+        )
+        message = f"请求参数校验失败: {summary}"
+    else:
+        message = f"HTTP {resp.status_code}"
     hint = body.get("hint")
     resource_id = body.get("resource_id")
     job_id = body.get("job_id")
+    reserved = {"detail", "error_code", "hint", "resource_id", "job_id"}
+    context = {key: value for key, value in body.items() if key not in reserved}
+    if validation_errors:
+        context["validation_errors"] = validation_errors
 
     return _error(
         error_type,
@@ -207,4 +222,24 @@ def _handle_http_error(resp: httpx.Response) -> tuple[dict, int]:
         hint=hint,
         resource_id=resource_id,
         job_id=job_id,
+        context=context,
     ), exit_code
+
+
+def _validation_errors(detail: Any) -> list[dict[str, Any]]:
+    """Sanitize FastAPI/Pydantic 422 details for the public error envelope."""
+    if not isinstance(detail, list):
+        return []
+    errors: list[dict[str, Any]] = []
+    for item in detail:
+        if not isinstance(item, dict):
+            continue
+        loc = item.get("loc")
+        msg = item.get("msg")
+        if not isinstance(loc, (list, tuple)) or not isinstance(msg, str):
+            continue
+        error: dict[str, Any] = {"loc": list(loc), "msg": msg}
+        if isinstance(item.get("type"), str):
+            error["type"] = item["type"]
+        errors.append(error)
+    return errors

@@ -8,6 +8,7 @@ import typer
 
 from nfctl.client import EXIT_VALIDATION, AgentClient, _error
 from nfctl.output import confirm, console, is_json, print_kv, print_result
+from nfctl.paths import normalize_launch_dir
 
 
 def _do_validate(
@@ -53,7 +54,9 @@ def _do_validate(
 
 
 def submit(
-    launch_dir: str = typer.Argument(help="分析目录路径"),
+    launch_dir: str = typer.Argument(
+        help="Launch directory（相对路径按本机当前目录转为绝对路径）"
+    ),
     pipeline: str = typer.Option(..., "--pipeline", "-p", help="Pipeline 名称"),
     project_sn: str = typer.Option(
         ..., "--project-sn", "-S", help="项目编号 (LIMS project_sn)"
@@ -62,6 +65,7 @@ def submit(
     dry_run: bool = typer.Option(False, "--dry-run", help="仅验证，不实际投递"),
 ) -> None:
     """提交分析"""
+    launch_dir = normalize_launch_dir(launch_dir)
     client = AgentClient()
     val_data, workflow_id = _do_validate(client, pipeline, launch_dir)
 
@@ -106,7 +110,7 @@ def submit(
 def resume(
     workflow_id: str = typer.Argument(help="Workflow ID"),
 ) -> None:
-    """重跑失败/取消的分析（恢复归档用 nfctl archive resume）"""
+    """重跑 failed/cancelled 分析。"""
     client = AgentClient()
     envelope, code = client.post(f"/workflow/{workflow_id}/resume")
 
@@ -122,13 +126,11 @@ def cancel(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
 ) -> None:
-    """取消整个分析（仅取消归档、保留分析结果用 nfctl archive cancel）"""
-    confirm(f"确认取消 {workflow_id}? 已成功的分析将被整体撤销并通知 LIMS 作废。")
+    """取消分析；不会取消 launch_dir 的独立存储操作。"""
+    confirm(f"确认取消分析 {workflow_id}? 已成功的分析将通知 LIMS 作废。")
 
     client = AgentClient()
-    # 归档取消已收拢进 archive 命令组(nfctl archive cancel),本命令固定整体撤销;
-    # server API 的 scope 参数保持不变,只是 CLI 不再暴露
-    body: dict = {"scope": "workflow"}
+    body: dict = {}
     if reason:
         body["reason"] = reason
 

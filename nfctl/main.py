@@ -93,7 +93,7 @@ from nfctl.commands import archive, config_cmd, pipeline, query, workflow  # noq
 
 app.add_typer(config_cmd.app, name="config", help="配置管理")
 app.add_typer(pipeline.app, name="pipeline", help="Pipeline 管理")
-app.add_typer(archive.app, name="archive", help="归档/后处理操作")
+app.add_typer(archive.app, name="archive", help="LaunchDir 存储操作")
 
 # 查询命令（扁平注册）
 app.command("overview")(query.overview)

@@ -135,6 +135,12 @@ def print_result(envelope: dict, exit_code: int) -> None:
             err_console.print(f"[dim]Job: {job_id}[/dim]")
         if hint := err.get("hint"):
             err_console.print(f"[dim]Hint: {hint}[/dim]")
+        reserved = {"type", "message", "resource_id", "job_id", "hint"}
+        for key, value in err.items():
+            if key not in reserved:
+                err_console.print(
+                    f"[dim]{escape(str(key))}: {escape(str(value))}[/dim]"
+                )
     sys.exit(exit_code)
 
 
@@ -197,21 +203,23 @@ def print_kv(title: str, items: list[tuple[str, Any]]) -> None:
         console.print(f"  {key:<{max_key}}  {cell}")
 
 
-# 状态颜色映射(analysis_status / pp_status / pp_phase / restore 探测值共用,
-# 颜色本身隐含"要不要关注")
+# 分析、目录存储与 operation 状态的统一颜色。
 _STATUS_COLORS: dict[str, str] = {
     "running": "blue",
     "pending": "yellow",
+    "cancelling": "yellow",
     "queued": "yellow",  # 已受理,等待队列空出后自动启动(per-pipeline 并发挂起)
     "succeeded": "green",
-    "done": "green",  # archive restore 探测结果
     "failed": "red",
     "cancelled": "dim",
-    "skipped": "dim",
-    # 归档轴阶段(pp_phase)
+    "archived": "green",
+    "empty": "dim",
+    "materialized": "blue",
+    "partial": "red",
+    "unknown": "yellow",
     "migrate": "blue",
     "archive": "blue",
-    "archive_wait": "cyan",
+    "restore": "blue",
 }
 
 

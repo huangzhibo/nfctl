@@ -1,16 +1,17 @@
-"""
-归档/后处理操作命令组：archive start / resume / restore / status / cancel
-
-归档专属操作的统一归宿,与分析主体操作(resume/cancel)分开,
-避免"resume 会不会重跑分析"的歧义。
-"""
+"""launch_dir 级存储生命周期命令。"""
 
 import sys
 import time
 
 import typer
 
-from nfctl.client import AgentClient
+from nfctl.client import (
+    EXIT_ERROR,
+    EXIT_SUCCESS,
+    EXIT_VALIDATION,
+    AgentClient,
+    _error,
+)
 from nfctl.output import (
     confirm,
     console,
@@ -19,215 +20,192 @@ from nfctl.output import (
     print_kv,
     print_result,
 )
+from nfctl.paths import normalize_launch_dir
 
 app = typer.Typer(no_args_is_help=True)
 
-# restore --wait 的轮询间隔与 gone 容忍次数(server NFS 宽限 120s,略放宽)
 _WAIT_POLL_SECONDS = 10
-_WAIT_GONE_LIMIT = 15
 
 
-@app.command("resume")
-def resume(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
-) -> None:
-    """恢复失败/取消的归档或后处理（分析须已成功；重跑分析用 nfctl resume）"""
-    client = AgentClient()
-    envelope, code = client.post(f"/workflow/{workflow_id}/archive/resume")
+def _post_command(
+    path: str, launch_dir: str, *, reason: str | None = None
+) -> tuple[dict, int]:
+    body = {"launch_dir": normalize_launch_dir(launch_dir)}
+    if reason:
+        body["reason"] = reason
+    return AgentClient().post(path, json=body)
 
+
+def _get_state(client: AgentClient, launch_dir: str) -> tuple[dict, int]:
+    normalized = normalize_launch_dir(launch_dir)
+    envelope, code = client.get(
+        "/launch-dirs",
+        launch_dir=normalized,
+        page=1,
+        page_size=1,
+    )
+    if not envelope["ok"]:
+        return envelope, code
+    items = envelope["data"].get("items", [])
+    if not items:
+        return (
+            _error(
+                "LAUNCH_DIR_NOT_FOUND",
+                "launch_dir 尚未登记",
+                resource_id=normalized,
+            ),
+            EXIT_VALIDATION,
+        )
+    return {"ok": True, "data": items[0]}, EXIT_SUCCESS
+
+
+def _print_accepted(action: str, envelope: dict, code: int) -> None:
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
-
-    d = envelope["data"]
-    console.print(f"[green]Archive resumed:[/green] {d.get('workflow_id')}")
-    sys.exit(code)
-
-
-def _request_archive_start(workflow_id: str, endpoint: str, *, legacy: bool) -> None:
-    """start/now 兼容入口共用的请求与输出。"""
-    client = AgentClient()
-    envelope, code = client.post(f"/workflow/{workflow_id}/archive/{endpoint}")
-
-    if not envelope["ok"] or is_json():
-        print_result(envelope, code)
-
-    if legacy:
-        console.print(
-            f"[green]Archive now:[/green] {workflow_id} "
-            f"等待期已跳过,将于下个对账周期(约 1 分钟内)开始归档"
-        )
-    else:
-        console.print(
-            f"[green]Archive started:[/green] {workflow_id} "
-            f"将于下个对账周期(约 1 分钟内)开始归档"
-        )
+    data = envelope["data"]
+    console.print(
+        f"[green]{action} 已受理:[/green] {data.get('launch_dir')} "
+        f"(operation {data.get('operation_id')}, 下个对账周期提交)"
+    )
     sys.exit(code)
 
 
 @app.command("start")
 def start(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
+    launch_dir: str = typer.Argument(help="Launch directory（可传 .）"),
 ) -> None:
-    """立即启动归档（支持 skipped 或等待归档；只归档、不迁移）"""
-    _request_archive_start(workflow_id, "start", legacy=False)
+    """立即对 launch_dir 发起归档。"""
+    envelope, code = _post_command("/launch-dirs/archive", launch_dir)
+    _print_accepted("Archive", envelope, code)
 
 
-@app.command("now")
-def now(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
+@app.command("resume")
+def resume(
+    launch_dir: str = typer.Argument(help="Launch directory（可传 .）"),
 ) -> None:
-    """兼容旧客户端的别名；新用法请改用 nfctl archive start"""
-    _request_archive_start(workflow_id, "now", legacy=True)
+    """恢复该目录最近一次 failed/cancelled 存储操作。"""
+    envelope, code = _post_command("/launch-dirs/resume", launch_dir)
+    _print_accepted("Storage resume", envelope, code)
 
 
 @app.command("restore")
 def restore(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
-    wait: bool = typer.Option(
-        False, "--wait", help="轮询等待解压完成(大归档可达小时级,也可稍后查询)"
-    ),
+    launch_dir: str = typer.Argument(help="Launch directory（可传 .）"),
+    wait: bool = typer.Option(False, "--wait", help="轮询目录状态，等待 restore 完成"),
 ) -> None:
-    """解压归档数据回 launch_dir 原位（进度用 nfctl archive status 查询）"""
-    client = AgentClient()
-    envelope, code = client.post(f"/workflow/{workflow_id}/archive/restore")
-
+    """把该 launch_dir 的归档数据解压回原位。"""
+    envelope, code = _post_command("/launch-dirs/restore", launch_dir)
     if not envelope["ok"]:
         print_result(envelope, code)
-
-    job_id = envelope["data"].get("job_id")
     if not wait:
-        if is_json():
-            print_result(envelope, code)
-        console.print(f"[green]Restore submitted:[/green] job {job_id}")
-        console.print(f"进度查询: nfctl archive status {workflow_id}")
-        sys.exit(code)
+        _print_accepted("Restore", envelope, code)
 
+    operation_id = envelope["data"].get("operation_id")
+    normalized = normalize_launch_dir(launch_dir)
     if not is_json():
-        console.print(f"Restore submitted (job {job_id}), waiting...")
-    gone_count = 0
+        console.print(f"Restore {operation_id} 已受理，等待完成...")
+    client = AgentClient()
     while True:
         time.sleep(_WAIT_POLL_SECONDS)
-        status_env, status_code = client.get(f"/workflow/{workflow_id}/archive/restore")
-        if not status_env["ok"]:
-            print_result(status_env, status_code)
-        data = status_env["data"]
-        status = data.get("status")
-        if status == "done":
+        state_env, state_code = _get_state(client, normalized)
+        if not state_env["ok"]:
+            print_result(state_env, state_code)
+        state = state_env["data"]
+        operation = state.get("operation") or {}
+        if operation.get("operation_id") != operation_id:
+            print_result(
+                _error(
+                    "STORAGE_OPERATION_REPLACED",
+                    "等待中的 restore 已被另一存储操作替代",
+                    resource_id=normalized,
+                    context={
+                        "expected_operation_id": operation_id,
+                        "current_operation_id": operation.get("operation_id"),
+                    },
+                ),
+                EXIT_ERROR,
+            )
+        operation_status = operation.get("status")
+        if operation_status == "succeeded":
             if is_json():
-                print_result(status_env, 0)
-            console.print(f"[green]Restore completed:[/green] {workflow_id}")
+                print_result(state_env, 0)
+            console.print(f"[green]Restore completed:[/green] {normalized}")
             sys.exit(0)
-        if status == "failed":
-            if is_json():
-                print_result(status_env, 1)
-            console.print(f"[red]Restore failed:[/red] {data.get('detail')}")
-            sys.exit(1)
-        if status == "gone":
-            # job 已不在且无退出码:NFS 延迟内继续等,持续 gone 视为异常退出
-            gone_count += 1
-            if gone_count >= _WAIT_GONE_LIMIT:
-                if is_json():
-                    print_result(status_env, 1)
-                console.print(
-                    "[red]Restore job 已消失且无退出码[/red]"
-                    "(可能被外部清理),请重新执行 restore"
-                )
-                sys.exit(1)
-        else:
-            gone_count = 0
+        if operation_status in ("failed", "cancelled"):
+            print_result(
+                _error(
+                    f"STORAGE_OPERATION_{operation_status.upper()}",
+                    state.get("last_error") or f"Restore operation {operation_status}",
+                    resource_id=normalized,
+                    context={
+                        "operation_id": operation_id,
+                        "operation_status": operation_status,
+                        "storage_state": state.get("storage_state"),
+                    },
+                ),
+                EXIT_ERROR,
+            )
 
 
 @app.command("status")
 def status(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
+    launch_dir: str = typer.Argument(help="Launch directory（可传 .）"),
 ) -> None:
-    """查看归档信息（产物位置/归档倒计时）与最近一次解压任务状态"""
-    client = AgentClient()
-    detail_env, detail_code = client.get(f"/workflow/{workflow_id}")
-    if not detail_env["ok"]:
-        print_result(detail_env, detail_code)
-    restore_env, restore_code = client.get(f"/workflow/{workflow_id}/archive/restore")
-    if not restore_env["ok"]:
-        print_result(restore_env, restore_code)
+    """查看目录存储状态、归档计划及最近一次操作。"""
+    envelope, code = _get_state(AgentClient(), launch_dir)
+    if not envelope["ok"] or is_json():
+        print_result(envelope, code)
 
-    d = detail_env["data"]
-    r = restore_env["data"]
-    if is_json():
-        print_result(
-            {
-                "ok": True,
-                "data": {
-                    "workflow_id": workflow_id,
-                    "analysis_status": d.get("analysis_status"),
-                    "status_summary": d.get("status_summary"),
-                    "pp_phase": d.get("pp_phase"),
-                    "pp_status": d.get("pp_status"),
-                    "error_message": d.get("error_message"),
-                    "archive_eligible_after": d.get("archive_eligible_after"),
-                    "archive_path": d.get("archive_path"),
-                    "restore": r,
-                },
-            },
-            0,
-        )
-
-    # 主状态:聚焦归档轴(阶段+状态+一句话);analysis_status 归 nfctl status,
-    # 此处不平铺(归档只在分析成功后推进,summary 已交代未开始的缘由)
-    phase = d.get("pp_phase")
-    pp_status = d.get("pp_status")
+    data = envelope["data"]
+    operation = data.get("operation") or {}
     items: list[tuple[str, object]] = [
-        ("workflow_id", workflow_id),
-        ("pp", f"{phase} ({pp_status})" if phase else pp_status),
-        ("summary", d.get("status_summary")),
+        ("launch_dir", data.get("launch_dir")),
+        ("storage_state", data.get("storage_state")),
+        ("auto_archive", data.get("auto_archive_enabled")),
+        ("plan_workflow_id", data.get("plan_workflow_id")),
+        ("archive_path", data.get("archive_path")),
     ]
-    # 产物/倒计时(有则显示)
-    if d.get("archive_eligible_after"):
-        items.append(
-            ("archive_eligible_after", format_local_time(d["archive_eligible_after"]))
+    if data.get("archive_due_at"):
+        items.append(("archive_due_at", format_local_time(data["archive_due_at"])))
+    if data.get("archived_at"):
+        items.append(("archived_at", format_local_time(data["archived_at"])))
+    if data.get("restored_at"):
+        items.append(("restored_at", format_local_time(data["restored_at"])))
+    if operation:
+        items.extend(
+            [
+                ("operation_id", operation.get("operation_id")),
+                ("operation_kind", operation.get("kind")),
+                ("operation_status", operation.get("status")),
+                ("operation_job_id", operation.get("job_id")),
+            ]
         )
-    if d.get("archive_path"):
-        items.append(("archive_path", d["archive_path"]))
-    # 失败排查(仅 failed):原因 + 日志目录提示。SGE 日志前缀即阶段名
-    # (migrate/archive),不需存 job id 也能指到文件;Slurm 统一 slurm-*.out
-    if pp_status == "failed":
-        if d.get("error_message"):
-            items.append(("error", d["error_message"]))
-        if d.get("launch_dir") and phase:
+        if operation.get("gone_since"):
             items.append(
-                ("log", f"见 {d['launch_dir']} 下 {phase}.o*(SGE) / slurm-*.out(Slurm)")
+                ("operation_gone_since", format_local_time(operation["gone_since"]))
             )
-    # 解压:仅在做过(status 非 not_submitted)时显示,消除 not_submitted 噪音
-    if r.get("status") != "not_submitted":
-        items.append(("restore_status", r.get("status")))
-        if r.get("job_id"):
-            items.append(("restore_job", r["job_id"]))
-        if r.get("detail"):
-            items.append(("restore_detail", r["detail"]))
-    print_kv("归档状态", items)
+    if data.get("last_error"):
+        items.append(("error", data["last_error"]))
+    print_kv("LaunchDir 存储状态", items)
     sys.exit(0)
 
 
 @app.command("cancel")
 def cancel(
-    workflow_id: str = typer.Argument(help="Workflow ID"),
+    launch_dir: str = typer.Argument(help="Launch directory（可传 .）"),
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
 ) -> None:
-    """取消后处理/归档，保留成功的分析结果（取消整个分析用 nfctl cancel）"""
-    confirm(f"确认仅取消 {workflow_id} 的归档(保留分析结果)?")
-
-    client = AgentClient()
-    body: dict = {"scope": "archive"}
-    if reason:
-        body["reason"] = reason
-
-    envelope, code = client.post(f"/workflow/{workflow_id}/cancel", json=body)
-
+    """取消当前存储操作，并关闭该目录的自动归档计划。"""
+    normalized = normalize_launch_dir(launch_dir)
+    confirm(f"确认取消 {normalized} 的存储操作并关闭自动归档?")
+    envelope, code = _post_command(
+        "/launch-dirs/cancel",
+        normalized,
+        reason=reason,
+    )
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
-
-    d = envelope["data"]
     console.print(
-        f"[yellow]归档已取消:[/yellow] {d.get('workflow_id')} "
-        f"(状态更新需数秒,可用 nfctl status 确认)"
+        f"[yellow]自动归档已关闭；活跃任务（如有）已提交取消请求:[/yellow] {normalized}"
     )
     sys.exit(code)

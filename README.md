@@ -1,161 +1,133 @@
 # nfctl
 
-nf-server CLI — 面向生信工程师和 AI Agent 的命令行工具。
+nf-server CLI，面向生信工程师和 AI Agent。
 
-nfctl 2.x 对应 nf-server 4.x；旧版 server/client 的 API 与 pipeline 归档配置契约不兼容。
+nfctl 3.x 对应 nf-server 5.x。3.0 起存储生命周期改为 LaunchDir 资源，
+不兼容旧的 workflow 级 archive API。
 
-## 安装
+## 安装与配置
 
 ```bash
 pip install nfctl
-```
 
-## 配置
-
-```bash
-# 设置服务地址（未配置时命令报 CONFIG_ERROR 并给出提示）
 nfctl config set url http://nf-server:8000
 
-# 或通过环境变量直连（解析优先级：--profile/NFCTL_PROFILE > NFCTL_URL > 当前 profile）
-export NFCTL_URL=http://nf-server:8000
-
-# 多环境用 profile 管理
+# 多环境 profile
 nfctl config set url http://test-server:8000 --profile test
-nfctl config use test        # 切换当前 profile
-nfctl --profile prod list    # 单条命令临时指定
+nfctl config use test
+nfctl --profile prod list
+
+# 环境变量可直连
+export NFCTL_URL=http://nf-server:8000
 ```
 
-## 命令
+解析优先级：`--profile` / `NFCTL_PROFILE` > `NFCTL_URL` > 当前 profile。
 
-### 查询
+## 两类资源
+
+- Workflow：一次 Nextflow 分析，由 `workflow_id` 标识。
+- LaunchDir：物理启动目录及其存储生命周期，由规范化绝对路径标识。
+
+分析状态只出现在 Workflow；归档、迁移和 restore 状态只出现在 LaunchDir。不要用某个 Workflow ID 代表目录存储状态。
+
+## 查询
 
 ```bash
-nfctl overview                           # 系统概览
-nfctl list [--status running] [-n 20]    # 分析列表
-nfctl list --all                         # 获取全部分析（自动翻页）
-nfctl list --sort created_at --sort-order asc  # 按创建时间升序
-nfctl list --pp failed                   # 按归档/后处理轴过滤（与 --status 正交）
-nfctl list --pipeline WGS --env prod     # 按 Pipeline / 环境过滤
-nfctl list --project-sn P2026001         # 按 LIMS 项目编号过滤
-nfctl list --data-number D001            # 按数据编号过滤
-nfctl list --query sample1               # 按 workflow_id / launch_dir / data_number 搜索
-nfctl list --launch-dir .                 # 精确查看当前启动目录的完整 workflow 历史和占用者
-nfctl list --group-by launch-dir          # 最近启动目录，按目录分页且组内列出全部 workflow
-nfctl list --group-by launch-dir --all    # 全部启动目录及其全部 workflow
-nfctl list --group-by launch-dir --state unknown,materialized,partial --all  # 尚不能确认最终归档
-nfctl list --group-by launch-dir --state archived --all      # 已归档并释放工作盘
-nfctl list --group-by launch-dir --rearchive-due --all       # restore 后已到重新归档时间
-nfctl status <id>                        # 分析详情
-nfctl progress <id>                      # 进度（含 process 级别明细）
-nfctl tasks <id> [--status failed]       # 子任务列表
-nfctl tasks <id> --sort duration --sort-order desc  # 按耗时排序
-nfctl task <id> <task_id>                # 子任务详情
-nfctl log <id> [--grep ERROR]            # 日志查看
-nfctl resources <id>                     # 资源统计
+nfctl overview
+nfctl list --status running
+nfctl list --pipeline WGS --env prod
+nfctl list --project-sn P2026001
+nfctl list --launch-dir .              # 该目录的 Workflow 历史
+nfctl status <workflow_id>
+nfctl progress <workflow_id>
+nfctl tasks <workflow_id> --status failed
+nfctl task <workflow_id> <task_id>
+nfctl log <workflow_id> --grep ERROR
+nfctl resources <workflow_id> --exclude-cached
 ```
 
-`--group-by launch-dir` 的分页单位是启动目录，同一目录的 workflow 不会被拆到不同页。
-`storage_state=archived` 表示归档包已生成且一级非隐藏数据目录已移出；
-`materialized` 表示目录正在工作盘上使用，`partial` 表示存储操作可能只完成一部分，
-`unknown` 表示存量或外部操作导致当前状态无法可靠判断。`--json` 返回相同目录状态结构。
-
-### 管理
+按目录盘点：
 
 ```bash
-nfctl submit <dir> -p <name> -S P2026001                 # 提交分析（--project-sn 必填）
-nfctl submit <dir> -p <name> -S P2026001 --env prod      # 指定环境（test/gray/prod）
-nfctl submit <dir> -p <name> -S P2026001 --dry-run       # 仅验证，不实际投递
-nfctl resume <id>                                        # 重跑失败/取消的分析
-nfctl cancel <id> [--reason "原因"]                      # 取消整个分析（running/succeeded 均可，会通知 LIMS 作废）
-nfctl delete <id>                                        # 删除分析（succeeded 不可删）
+nfctl list --group-by launch-dir
+nfctl list --group-by launch-dir --all
+nfctl list --group-by launch-dir --state unknown,materialized,partial --all
+nfctl list --group-by launch-dir --state archived,empty --all
+nfctl list --group-by launch-dir --archive-due --all
 ```
 
-### 归档 / 后处理
+`--group-by launch-dir` 的分页单位是目录，组内返回完整 Workflow 历史。
+`unknown,materialized,partial` 适合盘点仍有工作盘数据或物理状态不确定的目录；
+`archived,empty` 表示目录已经归档，或确认没有需要归档的数据。
+
+## 分析控制
 
 ```bash
-nfctl archive status <id>                # 归档信息（产物位置/倒计时）+ 最近一次解压任务状态
-nfctl archive start <id>                 # 立即启动归档（支持 skipped/等待归档；只归档、不迁移）
-nfctl archive now <id>                   # start 的 deprecated 兼容别名
-nfctl archive resume <id>                # 恢复失败/取消的归档或后处理（分析须已成功）
-nfctl archive restore <id> [--wait]      # 解压归档产物回 launch_dir 原位（大归档可达小时级）
-nfctl archive cancel <id>                # 仅取消后处理/归档，保留分析结果
+nfctl submit <launch_dir> -p <pipeline> -S <project_sn> [--env prod]
+nfctl submit . -p <pipeline> -S <project_sn> [--env prod]
+nfctl submit <launch_dir> -p <pipeline> -S <project_sn> --dry-run
+nfctl resume <workflow_id>
+nfctl cancel <workflow_id> [--reason 原因]
+nfctl delete <workflow_id>
 ```
 
-### 其他
+相对 launch_dir 会先按 nfctl 调用者的当前目录转换为绝对路径，因此可以在启动目录内直接使用 `submit .`。submit 会从 `run.sh` 读取 `TOWER_WORKFLOW_ID` 并校验请求一致。受理成功后服务端立即记录 `progress=1`，由 reconciler 异步启动。手动 qsub 只有在 Workflow 已通过 submit 登记时才能被 trace 接管。
+
+`cancel` 只取消分析，不取消目录存储操作。
+
+## 存储控制
+
+所有参数都是 launch_dir，可直接在目录内传 `.`：
 
 ```bash
-nfctl pipeline list/get/create/update/delete   # Pipeline 配置（并发/归档策略/飞书通知/超时覆盖）
-nfctl config show/set/use/list/remove          # 配置与多 profile 管理
-nfctl -v <命令>                                # 调试：stderr 显示 HTTP 请求/状态/耗时
+nfctl archive status .
+nfctl archive start .
+nfctl archive restore . --wait
+nfctl archive resume .
+nfctl archive cancel . --reason maintenance
 ```
 
-启用 pipeline 归档后，范围固定为 `launch_dir` 下所有一级非隐藏真实目录；不能按
-pipeline 选择目录。大文件迁移与归档使用同一范围。
+- `start`：立即发起 archive，不以 workflow_id 定位。
+- `restore`：已有一级非隐藏目录时拒绝覆盖；`--wait` 按 operation_id 等待终态。
+- `resume`：重试最近一次 failed/cancelled migrate/archive/restore。
+- `cancel`：关闭自动归档并请求取消活跃 job；operation 在 scheduler 确认退出前保持 `cancelling`。
 
-## 手动 submit 场景
+`storage_state` 为 `unknown | materialized | archived | empty | partial`；operation 状态为 `pending | running | cancelling | succeeded | failed | cancelled`。
 
-LIMS 本身就是通过 `nfctl submit` 通道向 nf-server 投递 nextflow 任务的。日常分析任务由 LIMS 自动触发,无需手动操作。以下两种情况需要手动 submit:
-
-1. **LIMS 未正常触发投递**:作为应急补投手段。
-2. **本地独立流程**:不需要同步到 LIMS2 云平台的分析任务。
-
-**只有走过 submit 通道的任务(LIMS 自动触发或手动补投均可),nf-server 才会记录这个任务,才能监控状态、查日志、续跑。**
-
-### 用法
-
-| 参数 | 说明 |
-|------|------|
-| `-p, --pipeline` | Pipeline 名称(必填) |
-| `-S, --project-sn` | LIMS 项目编号(必填) |
-| `-e, --env` | 环境,可选 `test` / `gray` / `prod`;**省略则不转发到 LIMS2 云平台**,按本地独立流程处理 |
-| `--dry-run` | 仅校验参数,不实际投递 |
+## Pipeline
 
 ```bash
-# 场景 1:LIMS 应急补投(同步到云平台)
-nfctl submit /path/to/launch_dir -p WGS -S P2026001 -e prod
-
-# 场景 2:本地独立流程(不同步云平台)
-nfctl submit /path/to/launch_dir -p WGS -S P2026001
+nfctl pipeline list
+nfctl pipeline create WGS --archive --archive-delay-hours 72
+nfctl pipeline update WGS --large-file-threshold 500M
 ```
 
-### resume 与 qsub 的衔接
+归档范围固定为 launch_dir 下所有一级非隐藏真实目录。Pipeline 只配置开关、迁移阈值、延迟、并发、通知和分析超时。
 
-- ✅ 走过 submit → 失败后可 `nfctl resume <workflow_id>` 续跑;手动 `qsub run.sh` 接管也能被识别为同一任务。
-- ❌ 没走过 submit、直接 qsub → nf-server 无记录,无法 resume,也无法监控,且没有补救路径。
-
-## AI Agent 使用
-
-所有命令支持 `--format json`，输出标准信封格式：
+## JSON / Agent
 
 ```bash
 nfctl -f json list
-# {"ok": true, "data": {"total": 5, "items": [...]}}
-```
-
-使用 `--jq` 过滤 JSON 输出：
-
-```bash
+nfctl -f json archive status .
 nfctl --jq '.data.items[].workflow_id' list
-nfctl --jq '.data.items[] | select(.status=="failed")' list
 ```
 
-安装 Agent Skills：
+JSON 使用统一信封：
 
-```bash
-npx skills add huangzhibo/nfctl
+```json
+{"ok": true, "data": {}}
+{"ok": false, "error": {"type": "LAUNCH_DIR_BUSY", "message": "...", "hint": "..."}}
 ```
+
+服务端的结构化错误上下文会保留在 `error` 中。例如 restore 冲突会返回
+`error.conflicts`，存储任务冲突会返回 `error.operation_id` / `error.job_id`。
+
+全局选项写在子命令前。`--format json` 自动跳过交互确认。
 
 ## 开发
 
 ```bash
 uv sync
-uv run nfctl --help
+uv run ruff check nfctl tests
 uv run pytest
-```
-
-提交前自动跑 ruff（首次 clone 后执行一次）：
-
-```bash
-uv tool install pre-commit   # 或 brew install pre-commit / pipx install pre-commit
-pre-commit install
 ```

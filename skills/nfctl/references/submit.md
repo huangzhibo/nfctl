@@ -32,8 +32,8 @@ submit <launch_dir> -p <pipeline>
 
 | 参数 | 语义 | 关键点 |
 |------|------|--------|
-| `launch_dir`（位置参数） | 分析工作目录，必须含可执行的 `run.sh` | 路径是服务端可见的绝对路径 |
-| `-p / --pipeline` | Pipeline 名称，决定并发配额和后处理策略 | 必须是 `pipeline list` 里已注册的名字 |
+| `launch_dir`（位置参数） | 分析工作目录，必须含可执行的 `run.sh` | 相对路径由 nfctl 按本机 cwd 转为绝对路径后发送 |
+| `-p / --pipeline` | Pipeline 名称，决定并发配额和归档策略 | 必须是 `pipeline list` 里已注册的名字 |
 | `-e / --env` | 运行环境：`test` / `gray` / `prod` | 决定下游系统（LIMS/存储/归档）走哪一套；**不影响 run.sh 执行**；可省略 |
 | `-S / --project-sn` | LIMS 项目编号（**必填**） | 业务归档与 launch_dir 所有权校验；与 `--env` 正交 |
 | `--dry-run` | 只 validate 不 submit | 服务端幂等，可重复调用；**仍需提供 `-S`**（CLI 层校验） |
@@ -66,6 +66,8 @@ submit <launch_dir> -p <pipeline>
 | `run_sh` 未通过 | 路径不存在或不可读 | 检查 `launch_dir` 在服务端视角下是否有效 |
 | `WORKFLOW_ID_EXISTS`（409） | 同 workflow_id 已注册过 | 重跑同一分析用 `resume`；首投换 workflow_id |
 | `LAUNCH_DIR_BUSY`（409） | 该目录上另一分析进行中 | 确需重跑先 `cancel` 占用流程再 `resume` |
+| `STORAGE_OPERATION_ACTIVE`（409） | 目录正在 migrate/archive/restore | 等待存储 operation 结束，或由用户明确执行 `archive cancel` |
+| `LAUNCH_DIR_STORAGE_UNCERTAIN`（409） | 目录处于 `partial` | 先 `archive status` 核对现场；不要直接覆盖或启动分析 |
 
 ## 投递后
 
