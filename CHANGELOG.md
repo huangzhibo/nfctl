@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/huangzhibo/nfctl/compare/v2.1.0...v2.2.0) (2026-08-18)
+
+
+### 新功能
+
+* **list:** add launch directory grouping ([4dd8a69](https://github.com/huangzhibo/nfctl/commit/4dd8a6920a3227453a3357a17e5730d7560c791b))
+
 ## [2.1.0](https://github.com/huangzhibo/nfctl/compare/v2.0.0...v2.1.0) (2026-08-12)
 
 
