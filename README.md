@@ -10,6 +10,7 @@ nfctl 3.x 对应 nf-server 5.x。3.0 起存储生命周期改为 LaunchDir 资�
 ```bash
 pip install nfctl
 
+# 没有系统默认时，用户可配置自己的 profile
 nfctl config set url http://nf-server:8000
 
 # 多环境 profile
@@ -21,7 +22,24 @@ nfctl --profile prod list
 export NFCTL_URL=http://nf-server:8000
 ```
 
-解析优先级：`--profile` / `NFCTL_PROFILE` > `NFCTL_URL` > 当前 profile。
+集群管理员可提供 `/etc/nfctl/config.json`，让新用户无需初始化即可使用：
+
+```json
+{
+  "current": "prod",
+  "profiles": {
+    "prod": {"url": "https://nf-server.internal"},
+    "test": {"url": "https://nf-server-test.internal"}
+  }
+}
+```
+
+系统配置只读，用户命令只修改 `~/.nfctl/config.json`。用户的同名
+profile 覆盖系统 profile；`nfctl config list/show` 会显示来源和两个
+配置文件路径。
+
+解析优先级：`--profile` / `NFCTL_PROFILE` > `NFCTL_URL` > 用户当前
+profile > 系统当前 profile。显式指定 profile 时仍是用户同名配置优先。
 
 ## 两类资源
 

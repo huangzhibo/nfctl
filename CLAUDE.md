@@ -58,7 +58,7 @@ uv run ruff format nfctl     # 格式化
 | `main.py` | Typer app 定义、全局选项、命令注册 |
 | `client.py` | httpx 封装、HTTP 状态码映射、错误信封构造 |
 | `paths.py` | launch_dir 在客户端 cwd 下的统一绝对路径规范化 |
-| `config.py` | 配置管理（`~/.nfctl/config.json` 多 profile；优先级 `--profile`/`NFCTL_PROFILE` > `NFCTL_URL` 直连 > 当前 profile） |
+| `config.py` | 配置管理（`/etc/nfctl/config.json` 系统默认 + `~/.nfctl/config.json` 用户覆盖；优先级 `--profile`/`NFCTL_PROFILE` > `NFCTL_URL` 直连 > 用户当前 profile > 系统当前 profile） |
 | `output.py` | 双模式输出（Rich table / JSON 信封）、全局状态（format/jq/quiet/verbose）、危险操作交互确认 |
 | `commands/query.py` | 查询命令：overview, list, status, progress, tasks, task, log, resources |
 | `commands/workflow.py` | 管理命令：submit（含 --dry-run）, cancel, delete, resume |

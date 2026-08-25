@@ -2400,6 +2400,170 @@ class TestConfig:
         assert "profiles" in data["data"]
 
     @pytest.mark.unit
+    def test_system_config_is_zero_config_fallback(self, tmp_path, monkeypatch):
+        system_file = tmp_path / "system-config.json"
+        user_file = tmp_path / "user" / "config.json"
+        system_file.write_text(
+            json.dumps(
+                {
+                    "current": "prod",
+                    "profiles": {
+                        "prod": {"url": "https://nf-server.internal"},
+                        "test": {"url": "https://nf-server-test.internal"},
+                    },
+                }
+            )
+        )
+        monkeypatch.setattr("nfctl.config.SYSTEM_CONFIG_FILE", system_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", user_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", user_file.parent)
+        monkeypatch.delenv("NFCTL_URL", raising=False)
+
+        from nfctl.config import get_url
+
+        assert get_url() == "https://nf-server.internal"
+        assert get_url("test") == "https://nf-server-test.internal"
+
+        result = runner.invoke(app, ["--format", "json", "config", "list"])
+        assert result.exit_code == 0
+        data = json.loads(result.output)["data"]
+        assert data["current"] == "prod"
+        assert {item["source"] for item in data["profiles"]} == {"system"}
+
+    @pytest.mark.unit
+    def test_user_profile_overrides_system_without_copying_it(
+        self, tmp_path, monkeypatch
+    ):
+        system_file = tmp_path / "system-config.json"
+        user_file = tmp_path / "user" / "config.json"
+        system_file.write_text(
+            json.dumps(
+                {
+                    "current": "prod",
+                    "profiles": {
+                        "prod": {"url": "https://system-prod"},
+                        "test": {"url": "https://system-test"},
+                    },
+                }
+            )
+        )
+        monkeypatch.setattr("nfctl.config.SYSTEM_CONFIG_FILE", system_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", user_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", user_file.parent)
+
+        result = runner.invoke(app, ["config", "set", "url", "https://user-prod"])
+        assert result.exit_code == 0
+
+        written = json.loads(user_file.read_text())
+        assert written == {
+            "current": "prod",
+            "profiles": {"prod": {"url": "https://user-prod"}},
+        }
+
+        from nfctl.config import get_config_sources, list_profiles
+
+        profiles, current = list_profiles()
+        sources, current_source = get_config_sources()
+        assert current == "prod"
+        assert profiles["prod"]["url"] == "https://user-prod"
+        assert profiles["test"]["url"] == "https://system-test"
+        assert sources == {"prod": "user", "test": "system"}
+        assert current_source == "user"
+
+    @pytest.mark.unit
+    def test_config_use_can_select_system_profile(self, tmp_path, monkeypatch):
+        system_file = tmp_path / "system-config.json"
+        user_file = tmp_path / "user" / "config.json"
+        system_file.write_text(
+            json.dumps(
+                {
+                    "current": "prod",
+                    "profiles": {
+                        "prod": {"url": "https://system-prod"},
+                        "test": {"url": "https://system-test"},
+                    },
+                }
+            )
+        )
+        monkeypatch.setattr("nfctl.config.SYSTEM_CONFIG_FILE", system_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", user_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", user_file.parent)
+        monkeypatch.delenv("NFCTL_URL", raising=False)
+
+        result = runner.invoke(app, ["--format", "json", "config", "use", "test"])
+        assert result.exit_code == 0
+        assert json.loads(user_file.read_text()) == {
+            "current": "test",
+            "profiles": {},
+        }
+
+        from nfctl.config import get_url
+
+        assert get_url() == "https://system-test"
+
+    @pytest.mark.unit
+    def test_config_remove_rejects_system_profile(self, tmp_path, monkeypatch):
+        system_file = tmp_path / "system-config.json"
+        user_file = tmp_path / "user" / "config.json"
+        system_file.write_text(
+            '{"current":"prod","profiles":{"prod":{"url":"https://system"}}}'
+        )
+        monkeypatch.setattr("nfctl.config.SYSTEM_CONFIG_FILE", system_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", user_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", user_file.parent)
+
+        result = runner.invoke(app, ["--format", "json", "config", "remove", "prod"])
+        assert result.exit_code == 2
+        error = json.loads(result.output)["error"]
+        assert error["type"] == "CONFIG_ERROR"
+        assert "系统配置" in error["message"]
+        assert not user_file.exists()
+
+    @pytest.mark.unit
+    def test_config_remove_user_override_reveals_system_profile(
+        self, tmp_path, monkeypatch
+    ):
+        system_file = tmp_path / "system-config.json"
+        user_file = tmp_path / "user" / "config.json"
+        system_file.write_text(
+            '{"current":"prod","profiles":{"prod":{"url":"https://system"}}}'
+        )
+        user_file.parent.mkdir()
+        user_file.write_text(
+            '{"current":"prod","profiles":{"prod":{"url":"https://user"}}}'
+        )
+        monkeypatch.setattr("nfctl.config.SYSTEM_CONFIG_FILE", system_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", user_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", user_file.parent)
+        monkeypatch.delenv("NFCTL_URL", raising=False)
+
+        result = runner.invoke(app, ["--format", "json", "config", "remove", "prod"])
+        assert result.exit_code == 0
+        assert json.loads(user_file.read_text()) == {
+            "current": "prod",
+            "profiles": {},
+        }
+
+        from nfctl.config import get_url
+
+        assert get_url() == "https://system"
+
+    @pytest.mark.unit
+    def test_invalid_system_config_reports_its_path(self, tmp_path, monkeypatch):
+        system_file = tmp_path / "system-config.json"
+        user_file = tmp_path / "user" / "config.json"
+        system_file.write_text("not-json")
+        monkeypatch.setattr("nfctl.config.SYSTEM_CONFIG_FILE", system_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_FILE", user_file)
+        monkeypatch.setattr("nfctl.config.CONFIG_DIR", user_file.parent)
+
+        result = runner.invoke(app, ["--format", "json", "config", "list"])
+        assert result.exit_code == 2
+        error = json.loads(result.output)["error"]
+        assert error["type"] == "CONFIG_ERROR"
+        assert str(system_file) in error["message"]
+
+    @pytest.mark.unit
     def test_config_set_creates_default_profile(self, tmp_path, monkeypatch):
         config_file = tmp_path / "config.json"
         monkeypatch.setattr("nfctl.config.CONFIG_FILE", config_file)

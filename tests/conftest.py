@@ -7,6 +7,11 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _isolate_nfctl(monkeypatch):
+def _isolate_nfctl(monkeypatch, tmp_path):
     monkeypatch.setenv("NFCTL_URL", "http://test")
     monkeypatch.setattr("nfctl.config._profile_override", None)
+    # 测试不得受开发机 /etc/nfctl/config.json 影响。需要系统配置的
+    # 用例在各自 tmp_path 下写入这个文件。
+    monkeypatch.setattr(
+        "nfctl.config.SYSTEM_CONFIG_FILE", tmp_path / "system-config.json"
+    )

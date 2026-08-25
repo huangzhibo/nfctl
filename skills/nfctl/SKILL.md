@@ -14,7 +14,7 @@ description: "用 nfctl 查询、投递和诊断 Nextflow 分析，并按 launch
 
 退出码：0 成功，1 一般错误，2 参数/验证错误，4 网络错误，5 冲突，6 服务端错误。
 
-服务地址优先级：`--profile` / `NFCTL_PROFILE` > `NFCTL_URL` > 当前 profile。`CONFIG_ERROR` 按 hint 配置 URL；`UPGRADE_REQUIRED` 先升级 nfctl。
+服务地址优先级：`--profile` / `NFCTL_PROFILE` > `NFCTL_URL` > 用户当前 profile > 系统当前 profile。系统默认来自 `/etc/nfctl/config.json`，用户同名 profile 优先。`CONFIG_ERROR` 按 hint 配置 URL；`UPGRADE_REQUIRED` 先升级 nfctl。
 
 ## 领域边界
 
