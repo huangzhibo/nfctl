@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.0.0](https://github.com/huangzhibo/nfctl/compare/v2.2.0...v3.0.0) (2026-10-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **cli:** requires nf-server 5.0; workflow list and detail fields moved under current_attempt, cancel no longer withdraws successful results and resume/cancel/delete send expected_attempt_no.
+* **cli:** archive commands now accept launch_dir instead of workflow_id; archive now, list --pp, and workflow-level storage fields are removed; nfctl 3.x requires nf-server 5.x.
+
+### 新功能
+
+* **cli:** address executions by attempt number ([d531a35](https://github.com/huangzhibo/nfctl/commit/d531a35cf176633d5aad93a64f02b5b1eacd89de))
+* **cli:** adopt launch directory storage lifecycle ([bb37fd9](https://github.com/huangzhibo/nfctl/commit/bb37fd94bcb900d97905608296a9e5be761986f2))
+* **config:** add system-wide profile defaults ([6df5187](https://github.com/huangzhibo/nfctl/commit/6df51876063db975d24380bbd6199168ec28001e))
+
 ## [2.2.0](https://github.com/huangzhibo/nfctl/compare/v2.1.0...v2.2.0) (2026-08-18)
 
 
