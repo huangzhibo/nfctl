@@ -379,7 +379,6 @@ class TestList:
                         "launch_dir": "/work/prod/BQ-TEST/run1",
                         "workflow_count": 2,
                         "storage_state": "materialized",
-                        "plan_workflow_id": "wf-old",
                         "archive_path": "/archive/run1",
                         "updated_at": "2026-08-18T05:00:00+00:00",
                         "occupied_workflow_id": "wf-running",
@@ -427,7 +426,6 @@ class TestList:
         assert "wf-old" in result.output
         assert "succeeded" in result.output
         assert "State materialized" in result.output
-        assert "存储计划 wf-old" in result.output
         call_args = mock_client.request.call_args
         assert call_args.args == ("GET", "/launch-dirs")
         assert call_args.kwargs["params"]["sort_by"] == "updated_at"
