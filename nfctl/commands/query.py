@@ -392,7 +392,7 @@ def status(
             items.append(("failure_code", run["failure_code"]))
     if run.get("duration"):
         items.append(("duration", f"{run['duration'] / 1000:.0f}s"))
-    for key in ("start_time", "complete_time", "withdrawn_at"):
+    for key in ("start_time", "complete_time"):
         if run.get(key):
             items.append((key, format_local_time(run[key])))
     if workflow.get("created_at"):

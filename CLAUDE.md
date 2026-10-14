@@ -47,7 +47,7 @@ uv run ruff format nfctl     # 格式化
 ### 领域资源
 
 - Workflow：一次分析，由 `workflow_id` 标识；只暴露分析状态。每次 submit/resume 是一次执行，对外只用 `attempt_no` 寻址（接口里没有 attempt UUID）；运行信息在 `current_attempt` 里。
-- 查询命令默认当前执行，`--attempt N` / `--previous` 看历史；控制命令把当前序号作为 `expected_attempt_no` 发送，`--attempt N` 钉住调用方看到的那次。
+- 查询命令默认当前执行，`--attempt N` / `--previous` 看历史；控制命令（resume/cancel/delete）只作用于当前执行，不带序号。cancel 已成功的执行即作废结果。
 - LaunchDir：一个物理启动目录，由规范化绝对路径标识；拥有存储状态、归档计划和当前/最近 operation。
 - `GET /workflow/list` 分页 Workflow；`GET /launch-dirs` 分页目录，组内返回完整 Workflow 历史。
 - 存储控制只走 `/launch-dirs/*`，不要重新引入 workflow 级 archive 字段或接口。
@@ -63,7 +63,7 @@ uv run ruff format nfctl     # 格式化
 | `output.py` | 双模式输出（Rich table / JSON 信封）、全局状态（format/jq/quiet/verbose）、危险操作交互确认 |
 | `attempts.py` | 执行寻址：`--attempt`/`--previous` 选项与当前序号解析 |
 | `commands/query.py` | 查询命令：overview, list, status, attempts, progress, tasks, task, log, resources |
-| `commands/workflow.py` | 管理命令：submit（含 --dry-run）, resume, cancel, withdraw, delete |
+| `commands/workflow.py` | 管理命令：submit（含 --dry-run）, resume, cancel, delete |
 | `commands/archive.py` | LaunchDir 存储命令：status, start, resume, restore, cancel |
 | `commands/config_cmd.py` | 配置命令：show, set, use, list, remove |
 | `commands/pipeline.py` | Pipeline 命令：list, get, create, update, delete |

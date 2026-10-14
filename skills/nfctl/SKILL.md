@@ -46,10 +46,9 @@ log       WORKFLOW_ID [-g GREP] [-a N | --previous]
 resources WORKFLOW_ID [--exclude-cached] [-a N | --previous]
 
 submit   LAUNCH_DIR -p PIPELINE -S PROJECT_SN [-e ENV] [--dry-run]
-resume   WORKFLOW_ID [-a N]
-cancel   WORKFLOW_ID [-r REASON] [-a N]
-withdraw WORKFLOW_ID -r REASON [-a N]
-delete   WORKFLOW_ID [-a N]
+resume   WORKFLOW_ID
+cancel   WORKFLOW_ID [-r REASON]
+delete   WORKFLOW_ID
 
 archive status  LAUNCH_DIR
 archive start   LAUNCH_DIR
@@ -91,11 +90,13 @@ nfctl -f json resources <workflow_id> --exclude-cached
 
 `log` 返回 `LOG_NOT_FOUND` 时看 `error.reason`：`not_started` 为还没开始运行，`not_retained` 为日志已被 Nextflow 轮转删除（只保留最近 10 次调用），`launch_dir_missing` 为目录不存在。
 
-### 重跑与撤销
+### 取消与重跑
 
-- 失败/取消后重跑：`resume`。成功的结果要先 `withdraw -r 原因`（LIMS 会收到 error）再 `resume`；不要用 cancel 撤销成功。
+控制命令只作用于当前执行。
+
+- `cancel`：运行中则停止（先 `stopping`），已成功则作废结果；LIMS 都会收到 error。操作前先 `status` 确认当前执行就是你要处理的那次。
+- `resume`：失败或取消（含作废的成功结果）后重跑，新建一次执行。有效的成功结果要先 cancel 作废。
 - 换了 workflow_id 的重分析是新分析，走 `submit`。
-- 控制命令自动带当前执行序号；如果你基于之前查到的状态做决定，用 `-a <那时的 attempt_no>`，执行已变化时会得到 `ATTEMPT_CHANGED`。
 
 ### 目录存储盘点
 
@@ -123,9 +124,8 @@ restore 不覆盖已有数据：归档里的目录都已在原位时直接成功
 - `LAUNCH_DIR_STORAGE_UNCERTAIN`：目录为 `partial`；只能 resume 最近操作或先人工核对现场。
 - `ARCHIVE_NOT_FOUND`：确认 archive_path 和 `archive.tar.zst`，不要伪造成功。
 - `WORKFLOW_ID_EXISTS`：查现有 Workflow；不要直接生成另一个 ID 绕过业务意图。
-- `ATTEMPT_CHANGED`：期间有了新的执行，当前序号见 `error.current_attempt_no`。重新 `status` 后按用户意图决定，不要直接对新执行重试同一动作。
-- `RESUME_REJECTED`：执行仍在运行/停止中，或成功结果尚未 withdraw。
-- `CANCEL_REJECTED`：执行已结束；成功结果用 withdraw。
+- `RESUME_REJECTED`：执行仍在运行/停止中，或成功结果尚未 cancel 作废。
+- `CANCEL_REJECTED`：执行已失败或已取消，没有可取消的。
 - `DELETE_REJECTED`：执行未结束，或这个分析有过成功执行（成功历史不可删）。
 
 ## 批量投递
