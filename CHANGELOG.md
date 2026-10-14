@@ -5,13 +5,11 @@
 
 ### 新功能
 
-* **cli:** reduce control commands to cancel, resume and delete ([cfe6995](https://github.com/huangzhibo/nfctl/commit/cfe699528a815837e460395b11ca12ed43936b74))
 * **cli:** reduce control commands to cancel, resume and delete ([7551186](https://github.com/huangzhibo/nfctl/commit/75511863f24274cc7b014476a9e5daf7bcb95a42))
 
 
 ### 重构
 
-* **cli:** stop showing the plan workflow of a launch dir ([94d5143](https://github.com/huangzhibo/nfctl/commit/94d5143319434659653daa7cd533bbaa4b69fc40))
 * **cli:** stop showing the plan workflow of a launch dir ([74053f9](https://github.com/huangzhibo/nfctl/commit/74053f901c7ef1a4921d3aad7539eaa5db1bcc46))
 
 ## [3.0.0](https://github.com/huangzhibo/nfctl/compare/v2.2.0...v3.0.0) (2026-10-14)
