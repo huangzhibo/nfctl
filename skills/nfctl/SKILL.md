@@ -9,7 +9,7 @@ description: "用 nfctl 查询、投递和诊断 Nextflow 分析，并按 launch
 
 - Agent 调用必须使用 `-f json`；全局选项写在子命令前。
 - 成功信封：`{"ok":true,"data":...}`。
-- 失败信封：`{"ok":false,"error":{"type":"...","message":"...","hint":"..."}}`；服务端上下文会以 `conflicts`、`operation_id` 等原字段名保留在 `error` 中，422 参数错误另有 `validation_errors`。
+- 失败信封：`{"ok":false,"error":{"type":"...","message":"...","hint":"..."}}`；服务端上下文会以 `current_attempt_no`、`operation_id` 等原字段名保留在 `error` 中，422 参数错误另有 `validation_errors`。
 - `--jq` 隐含 JSON；JSON/quiet 模式跳过交互确认。
 
 退出码：0 成功，1 一般错误，2 参数/验证错误，4 网络错误，5 冲突，6 服务端错误。
@@ -18,11 +18,13 @@ description: "用 nfctl 查询、投递和诊断 Nextflow 分析，并按 launch
 
 ## 领域边界
 
-- Workflow 由 `workflow_id` 标识，只描述一次分析。
+- Workflow 由 `workflow_id` 标识，只描述一次分析。每次 submit/resume 是一次执行，用
+  `attempt_no` 区分（从 1 连续递增，当前执行永远是最大号）。运行信息在 `current_attempt` 里。
 - LaunchDir 由规范化绝对路径标识，是目录存储状态、归档计划和 operation 的唯一资源。
 - 一个 LaunchDir 可以有多条 Workflow 历史。不要用“最新 Workflow 的归档字段”推断目录状态。
 
-分析状态 `analysis_status`：`queued | running | succeeded | failed | cancelled`。
+分析状态 `analysis_status`（当前执行的）：`queued | running | stopping | succeeded | failed | cancelled`。
+`stopping` 表示已请求停止、调度任务还没确认退出，目录仍被占用。
 
 目录 `storage_state`：`unknown | materialized | archived | empty | partial`。
 
@@ -35,17 +37,19 @@ overview
 list [-s ANALYSIS_STATUS] [-p PIPELINE] [--env ENV] [-S PROJECT_SN]
      [-D DATA_NUMBER] [-q QUERY] [-L LAUNCH_DIR] [--all]
 list --group-by launch-dir [--state STORAGE_STATE] [--archive-due] [--all]
-status    WORKFLOW_ID
-progress  WORKFLOW_ID
-tasks     WORKFLOW_ID [-s STATUS] [--process PROCESS]
-task      WORKFLOW_ID TASK_ID
-log       WORKFLOW_ID [-g GREP]
-resources WORKFLOW_ID [--exclude-cached]
+status    WORKFLOW_ID [-a N | --previous]
+attempts  WORKFLOW_ID
+progress  WORKFLOW_ID [-a N | --previous]
+tasks     WORKFLOW_ID [-s STATUS] [--process PROCESS] [-a N | --previous]
+task      WORKFLOW_ID TASK_ID [-a N | --previous]
+log       WORKFLOW_ID [-g GREP] [-a N | --previous]
+resources WORKFLOW_ID [--exclude-cached] [-a N | --previous]
 
-submit LAUNCH_DIR -p PIPELINE -S PROJECT_SN [-e ENV] [--dry-run]
-resume WORKFLOW_ID
-cancel WORKFLOW_ID [-r REASON]
-delete WORKFLOW_ID
+submit   LAUNCH_DIR -p PIPELINE -S PROJECT_SN [-e ENV] [--dry-run]
+resume   WORKFLOW_ID [-a N]
+cancel   WORKFLOW_ID [-r REASON] [-a N]
+withdraw WORKFLOW_ID -r REASON [-a N]
+delete   WORKFLOW_ID [-a N]
 
 archive status  LAUNCH_DIR
 archive start   LAUNCH_DIR
@@ -64,19 +68,34 @@ nfctl -f json submit /data/project/run1 -p WGS -S P2026001 -e prod
 nfctl -f json status <workflow_id>
 ```
 
-相对 LAUNCH_DIR 会按 nfctl 调用者的 cwd 转为绝对路径，因此可在启动目录内使用 `submit .`。submit 从 `run.sh` 提取 `TOWER_WORKFLOW_ID`。成功受理后 `analysis_status` 通常先为 `queued`，有容量后转 `running`。分析结束只看 `analysis_status`，存储进度另查 LaunchDir。
+相对 LAUNCH_DIR 会按 nfctl 调用者的 cwd 转为绝对路径，因此可在启动目录内使用 `submit .`。submit 从 `run.sh` 提取 `TOWER_WORKFLOW_ID`。成功受理后 `analysis_status` 通常先为 `queued`，有容量后转 `running`；目录已归档时会先自动 restore，期间保持 `queued`，详情的 `launch_dir_state.operation_kind=restore`。分析结束只看 `analysis_status`，存储进度另查 LaunchDir。
+
+### 执行历史
+
+查询命令默认当前执行，响应都回显 `attempt_no`；翻页或连续查询时用 `-a <回显的 attempt_no>` 钉住同一次执行。`--previous` 是当前序号减 1，第 1 次执行没有上一次（`ATTEMPT_NOT_FOUND`）。`status -a N` 的 JSON 是该次执行本身（不含 Workflow 级字段）。
 
 ### 分析失败诊断
 
 ```bash
 nfctl -f json status <workflow_id>
+nfctl -f json attempts <workflow_id>
 nfctl -f json tasks <workflow_id> -s failed
 nfctl -f json task <workflow_id> <task_id>
 nfctl -f json log <workflow_id> -g ERROR
 nfctl -f json resources <workflow_id> --exclude-cached
 ```
 
+失败原因看 `current_attempt.error_summary`（trace 错误摘要）和 `failure_code`：`TRACE_REPORTED_FAILURE` 为流程报错，`EXECUTION_TIMEOUT` / `PROGRESS_STALLED` 为超时/停滞，`RESTORE_FAILED` 为分析前的自动恢复失败（查 `archive status`）。`status`（含 `-a N`）的 JSON 带 `error_message` / `error_report` 原文；`list` / `attempts` 不含这些大字段。
+
 常见信号：137 通常为 OOM；143 为 SIGTERM/超时；`No space left` 为磁盘；`Permission denied` 为权限。
+
+`log` 返回 `LOG_NOT_FOUND` 时看 `error.reason`：`not_started` 为还没开始运行，`not_retained` 为日志已被 Nextflow 轮转删除（只保留最近 10 次调用），`launch_dir_missing` 为目录不存在。
+
+### 重跑与撤销
+
+- 失败/取消后重跑：`resume`。成功的结果要先 `withdraw -r 原因`（LIMS 会收到 error）再 `resume`；不要用 cancel 撤销成功。
+- 换了 workflow_id 的重分析是新分析，走 `submit`。
+- 控制命令自动带当前执行序号；如果你基于之前查到的状态做决定，用 `-a <那时的 attempt_no>`，执行已变化时会得到 `ATTEMPT_CHANGED`。
 
 ### 目录存储盘点
 
@@ -94,7 +113,7 @@ nfctl -f json archive status /data/project/run1
 nfctl -f json archive restore /data/project/run1 --wait
 ```
 
-`RESTORE_CONFLICT` 表示目录已有非隐藏数据，冲突目录见 `error.conflicts`。不要自动删除或覆盖；先让用户/运维确认这些目录是人工数据还是失败残留。
+restore 不覆盖已有数据：归档里的目录都已在原位时直接成功；只有一部分在时 operation 失败（见 `last_error`），目录通常变为 `partial`。不要自动删除或覆盖；先让用户/运维确认现场。分析的 submit/resume 会自动 restore，不需要先手动执行。
 
 ## 冲突处理
 
@@ -104,6 +123,10 @@ nfctl -f json archive restore /data/project/run1 --wait
 - `LAUNCH_DIR_STORAGE_UNCERTAIN`：目录为 `partial`；只能 resume 最近操作或先人工核对现场。
 - `ARCHIVE_NOT_FOUND`：确认 archive_path 和 `archive.tar.zst`，不要伪造成功。
 - `WORKFLOW_ID_EXISTS`：查现有 Workflow；不要直接生成另一个 ID 绕过业务意图。
+- `ATTEMPT_CHANGED`：期间有了新的执行，当前序号见 `error.current_attempt_no`。重新 `status` 后按用户意图决定，不要直接对新执行重试同一动作。
+- `RESUME_REJECTED`：执行仍在运行/停止中，或成功结果尚未 withdraw。
+- `CANCEL_REJECTED`：执行已结束；成功结果用 withdraw。
+- `DELETE_REJECTED`：执行未结束，或这个分析有过成功执行（成功历史不可删）。
 
 ## 批量投递
 

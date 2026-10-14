@@ -17,7 +17,7 @@ nf-server 错误响应顶层扁平:
 本客户端的错误信封:
     {"ok": False, "error": {"type": ..., "message": ..., "hint": ..., "job_id": ..., "resource_id": ..., ...}}
 其中 type 优先用服务端 error_code,回退到 HTTP 状态码映射。
-服务端结构化上下文（如 conflicts / operation_id）原名保留在 error 中，供 Agent 决策。
+服务端结构化上下文（如 current_attempt_no / operation_id）原名保留在 error 中，供 Agent 决策。
 """
 
 import time
@@ -124,8 +124,9 @@ class AgentClient:
     def put(self, path: str, json: dict | None = None) -> tuple[dict, int]:
         return self._request("PUT", path, json=json)
 
-    def delete(self, path: str) -> tuple[dict, int]:
-        return self._request("DELETE", path)
+    def delete(self, path: str, **params: Any) -> tuple[dict, int]:
+        clean = {k: v for k, v in params.items() if v is not None}
+        return self._request("DELETE", path, params=clean)
 
 
 _new_version_warned = False

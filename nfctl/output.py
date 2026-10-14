@@ -208,6 +208,7 @@ _STATUS_COLORS: dict[str, str] = {
     "running": "blue",
     "pending": "yellow",
     "cancelling": "yellow",
+    "stopping": "yellow",  # 已请求停止,确认调度任务退出前仍占用目录
     "queued": "yellow",  # 已受理,等待队列空出后自动启动(per-pipeline 并发挂起)
     "succeeded": "green",
     "failed": "red",

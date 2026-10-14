@@ -31,7 +31,7 @@ uv run ruff format nfctl     # 格式化
 - 成功: `{"ok": true, "data": ...}`
 - 失败: `{"ok": false, "error": {"type": "ERROR_TYPE", "message": "...", "hint": "..."}}`
 
-服务端错误上下文按原字段名保留在 `error` 中，例如 `conflicts`、`operation_id`、`occupied_workflow_id`。FastAPI 422 的列表会规范化为去除原始 input 的 `validation_errors`。
+服务端错误上下文按原字段名保留在 `error` 中，例如 `current_attempt_no`、`operation_id`、`occupied_workflow_id`。FastAPI 422 的列表会规范化为去除原始 input 的 `validation_errors`。
 
 `--format json` 隐含 `--quiet`，确保 stdout 只有合法 JSON。`--jq` 隐含 `--format json`，通过 jq 子进程过滤输出。`--format` 和 `--jq` 均为全局选项，写在子命令之前：`nfctl -f json list`。
 
@@ -46,7 +46,8 @@ uv run ruff format nfctl     # 格式化
 
 ### 领域资源
 
-- Workflow：一次分析，由 `workflow_id` 标识；只暴露分析状态。
+- Workflow：一次分析，由 `workflow_id` 标识；只暴露分析状态。每次 submit/resume 是一次执行，对外只用 `attempt_no` 寻址（接口里没有 attempt UUID）；运行信息在 `current_attempt` 里。
+- 查询命令默认当前执行，`--attempt N` / `--previous` 看历史；控制命令把当前序号作为 `expected_attempt_no` 发送，`--attempt N` 钉住调用方看到的那次。
 - LaunchDir：一个物理启动目录，由规范化绝对路径标识；拥有存储状态、归档计划和当前/最近 operation。
 - `GET /workflow/list` 分页 Workflow；`GET /launch-dirs` 分页目录，组内返回完整 Workflow 历史。
 - 存储控制只走 `/launch-dirs/*`，不要重新引入 workflow 级 archive 字段或接口。
@@ -60,8 +61,9 @@ uv run ruff format nfctl     # 格式化
 | `paths.py` | launch_dir 在客户端 cwd 下的统一绝对路径规范化 |
 | `config.py` | 配置管理（`/etc/nfctl/config.json` 系统默认 + `~/.nfctl/config.json` 用户覆盖；优先级 `--profile`/`NFCTL_PROFILE` > `NFCTL_URL` 直连 > 用户当前 profile > 系统当前 profile） |
 | `output.py` | 双模式输出（Rich table / JSON 信封）、全局状态（format/jq/quiet/verbose）、危险操作交互确认 |
-| `commands/query.py` | 查询命令：overview, list, status, progress, tasks, task, log, resources |
-| `commands/workflow.py` | 管理命令：submit（含 --dry-run）, cancel, delete, resume |
+| `attempts.py` | 执行寻址：`--attempt`/`--previous` 选项与当前序号解析 |
+| `commands/query.py` | 查询命令：overview, list, status, attempts, progress, tasks, task, log, resources |
+| `commands/workflow.py` | 管理命令：submit（含 --dry-run）, resume, cancel, withdraw, delete |
 | `commands/archive.py` | LaunchDir 存储命令：status, start, resume, restore, cancel |
 | `commands/config_cmd.py` | 配置命令：show, set, use, list, remove |
 | `commands/pipeline.py` | Pipeline 命令：list, get, create, update, delete |
@@ -73,6 +75,6 @@ uv run ruff format nfctl     # 格式化
 ## 开发约定
 
 - 版本号单一真源为 `pyproject.toml`；`main.py --version` 与测试都通过 `importlib.metadata.version("nfctl")` 读取
-- 当前 breaking 契约通过 release-please 从 2.1.0 发布为 3.0.0；不要手工提前修改版本号
+- 当前 breaking 契约（launch-dir 存储 + attempt 寻址，配套 nf-server 5.0，其 `NFCTL_MIN_VERSION=3.0.0`）通过 release-please 从 2.2.0 发布为 3.0.0；不要手工提前修改版本号
 - Ruff 配置忽略 E501（行长）和 B008（参数默认值中的函数调用，Typer 需要）
 - `skills/` 目录存放 AI Agent 的 Skill 文档，不是运行时代码

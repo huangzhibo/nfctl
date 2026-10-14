@@ -1,11 +1,15 @@
 """
-管理命令：submit / cancel / delete / resume
+管理命令：submit / resume / cancel / withdraw / delete
+
+控制动作都针对某次执行：带 expected_attempt_no，执行已不是当前那次时服务端返回
+409 ATTEMPT_CHANGED。默认取当前执行；--attempt N 让调用方钉住自己看到的那次。
 """
 
 import sys
 
 import typer
 
+from nfctl.attempts import attempt_option, current_attempt_no, label
 from nfctl.client import EXIT_VALIDATION, AgentClient, _error
 from nfctl.output import confirm, console, is_json, print_kv, print_result
 from nfctl.paths import normalize_launch_dir
@@ -102,35 +106,57 @@ def submit(
 
     d = envelope["data"]
     console.print(
-        f"[green]Submitted:[/green] {d.get('workflow_id')} (pipeline: {d.get('pipeline_name')})"
+        f"[green]Submitted:[/green] {label(d.get('workflow_id'), d.get('attempt_no'))} "
+        f"(pipeline: {d.get('pipeline_name')})"
     )
     sys.exit(code)
 
 
+_EXPECTED_ATTEMPT_HELP = "只在第 N 次仍是当前执行时操作（默认当前执行）"
+
+
+def _target(client: AgentClient, workflow_id: str, attempt: int | None) -> int:
+    return attempt if attempt is not None else current_attempt_no(client, workflow_id)
+
+
 def resume(
     workflow_id: str = typer.Argument(help="Workflow ID"),
+    attempt: int | None = attempt_option(_EXPECTED_ATTEMPT_HELP),
 ) -> None:
-    """重跑 failed/cancelled 分析。"""
+    """重跑分析，新建一次执行。
+
+    支持 failed/cancelled 和已撤销的成功；已归档目录会先自动恢复再投递。
+    """
     client = AgentClient()
-    envelope, code = client.post(f"/workflow/{workflow_id}/resume")
+    expected = _target(client, workflow_id, attempt)
+    envelope, code = client.post(
+        f"/workflow/{workflow_id}/resume", json={"expected_attempt_no": expected}
+    )
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
 
     d = envelope["data"]
-    console.print(f"[green]Resumed:[/green] {d.get('workflow_id')}")
+    console.print(
+        f"[green]Resumed:[/green] {label(d.get('workflow_id'), d.get('attempt_no'))}"
+    )
     sys.exit(code)
 
 
 def cancel(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     reason: str | None = typer.Option(None, "--reason", "-r", help="取消原因"),
+    attempt: int | None = attempt_option(_EXPECTED_ATTEMPT_HELP),
 ) -> None:
-    """取消分析；不会取消 launch_dir 的独立存储操作。"""
-    confirm(f"确认取消分析 {workflow_id}? 已成功的分析将通知 LIMS 作废。")
+    """取消运行中的分析。
 
+    成功结果用 withdraw 撤销；目录存储操作用 archive cancel。
+    """
     client = AgentClient()
-    body: dict = {}
+    expected = _target(client, workflow_id, attempt)
+    confirm(f"确认取消 {label(workflow_id, expected)}?")
+
+    body: dict = {"expected_attempt_no": expected}
     if reason:
         body["reason"] = reason
 
@@ -141,21 +167,53 @@ def cancel(
 
     d = envelope["data"]
     console.print(
-        f"[yellow]Cancel signal sent:[/yellow] {d.get('workflow_id')} "
-        f"(状态更新需数秒,可用 nfctl status 确认)"
+        f"[yellow]Stopping:[/yellow] {label(d.get('workflow_id'), d.get('attempt_no'))} "
+        f"(确认调度任务退出后变为 cancelled,可用 nfctl status 查看)"
+    )
+    sys.exit(code)
+
+
+def withdraw(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+    reason: str = typer.Option(..., "--reason", "-r", help="撤销原因（必填）"),
+    attempt: int | None = attempt_option("撤销第几次执行的成功结果（默认当前执行）"),
+) -> None:
+    """撤销成功结果：LIMS 收到 error，之后可 resume 重跑。"""
+    client = AgentClient()
+    target = _target(client, workflow_id, attempt)
+    confirm(f"确认撤销 {label(workflow_id, target)} 的成功结果? LIMS 将收到 error。")
+
+    envelope, code = client.post(
+        f"/workflow/{workflow_id}/attempts/{target}/withdraw", json={"reason": reason}
+    )
+
+    if not envelope["ok"] or is_json():
+        print_result(envelope, code)
+
+    d = envelope["data"]
+    console.print(
+        f"[yellow]Withdrawn:[/yellow] {label(d.get('workflow_id'), d.get('attempt_no'))} "
+        f"(如需重跑: nfctl resume {d.get('workflow_id')})"
     )
     sys.exit(code)
 
 
 def delete(
     workflow_id: str = typer.Argument(help="Workflow ID"),
+    attempt: int | None = attempt_option(_EXPECTED_ATTEMPT_HELP),
 ) -> None:
-    """删除分析（仅终态；succeeded 视为合规资产，server 拒删）"""
-    # succeeded 不可删的合规守卫已下沉 server(直调 API 也拦得住),CLI 不再预查
-    confirm(f"确认删除 {workflow_id}? 此操作不可恢复。")
+    """删除分析及全部执行历史。
 
+    不动目录文件；有过成功执行的分析 server 拒删。
+    """
+    # succeeded 不可删的合规守卫已下沉 server(直调 API 也拦得住),CLI 不再预查
     client = AgentClient()
-    envelope, code = client.delete(f"/workflow/{workflow_id}")
+    expected = _target(client, workflow_id, attempt)
+    confirm(f"确认删除 {workflow_id} 及其 {expected} 次执行历史? 此操作不可恢复。")
+
+    envelope, code = client.delete(
+        f"/workflow/{workflow_id}", expected_attempt_no=expected
+    )
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
