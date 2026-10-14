@@ -299,11 +299,6 @@ def _print_launch_dir_groups(data: dict) -> None:
             occupied = "无活跃占用"
 
         storage_state = escape(str(group.get("storage_state") or "unknown"))
-        plan_id = group.get("plan_workflow_id")
-        if plan_id:
-            archive = f"存储计划 {escape(str(plan_id))}"
-        else:
-            archive = "无存储计划"
         operation = group.get("operation") or {}
         operation_text = ""
         if operation.get("kind"):
@@ -314,7 +309,7 @@ def _print_launch_dir_groups(data: dict) -> None:
         updated = format_local_time(group.get("updated_at"))
         console.print(
             f"[dim]{group.get('workflow_count', len(workflows))} workflows · "
-            f"State {storage_state} · {occupied} · {archive}"
+            f"State {storage_state} · {occupied}"
             f"{operation_text} · Updated {escape(str(updated))}[/dim]"
         )
         print_table("", _WORKFLOW_COLUMNS, workflows)

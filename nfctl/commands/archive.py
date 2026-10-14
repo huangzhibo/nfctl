@@ -162,7 +162,6 @@ def status(
         ("launch_dir", data.get("launch_dir")),
         ("storage_state", data.get("storage_state")),
         ("auto_archive", data.get("auto_archive_enabled")),
-        ("plan_workflow_id", data.get("plan_workflow_id")),
         ("archive_path", data.get("archive_path")),
     ]
     if data.get("archive_due_at"):
