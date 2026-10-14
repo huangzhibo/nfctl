@@ -1,10 +1,17 @@
 """
-查询命令：overview / list / status / tasks / log / resources
+查询命令：overview / list / status / attempts / tasks / log / resources
 """
 
 import typer
 from rich.markup import escape
 
+from nfctl.attempts import (
+    attempt_option,
+    fetch_workflow,
+    label,
+    previous_option,
+    resolve_attempt_no,
+)
 from nfctl.client import AgentClient
 from nfctl.output import (
     console,
@@ -19,6 +26,7 @@ from nfctl.paths import normalize_launch_dir
 
 _WORKFLOW_COLUMNS = [
     ("workflow_id", "ID"),
+    ("attempt_no", "Attempt"),
     ("analysis_status", "Status"),
     ("progress_percent", "Progress"),
     ("pipeline_name", "Pipeline"),
@@ -29,9 +37,12 @@ _WORKFLOW_COLUMNS = [
 
 
 def _prepare_workflow_items(items: list[dict]) -> None:
-    """把 workflow API 字段转换成人类表格字段。"""
+    """把 workflow API 字段转换成人类表格字段；运行信息来自当前执行。"""
     for item in items:
-        item["progress_percent"] = f"{item.get('progress_percent', 0):.0f}%"
+        attempt = item.get("current_attempt") or {}
+        for key in ("attempt_no", "analysis_status", "launch_dir_occupied"):
+            item[key] = attempt.get(key)
+        item["progress_percent"] = f"{attempt.get('progress_percent', 0):.0f}%"
         if item.get("updated_at"):
             item["updated_at"] = format_local_time(item["updated_at"])
         # env 为空表示内部流程,不向 LIMS 推送进度
@@ -108,6 +119,7 @@ def overview() -> None:
 
     items: list[tuple[str, object]] = [
         ("running", data.get("running", 0)),
+        ("stopping", data.get("stopping", 0)),
         ("succeeded", data.get("succeeded", 0)),
         ("failed", data.get("failed", 0)),
         ("cancelled", data.get("cancelled", 0)),
@@ -147,8 +159,8 @@ def list_workflows(
         "--status",
         "-s",
         help=(
-            "分析状态过滤（逗号分隔:queued|running|succeeded|failed|cancelled）,"
-            "与 Status 列同口径"
+            "当前执行的分析状态过滤（逗号分隔:"
+            "queued|running|stopping|succeeded|failed|cancelled）,与 Status 列同口径"
         ),
     ),
     pipeline_name: str | None = typer.Option(
@@ -314,58 +326,120 @@ def _print_launch_dir_groups(data: dict) -> None:
 
 def status(
     workflow_id: str = typer.Argument(help="Workflow ID"),
+    attempt: int | None = attempt_option("查看第几次执行（默认当前执行）"),
+    previous: bool = previous_option(),
 ) -> None:
-    """分析详情"""
+    """分析详情；默认展示当前执行，--attempt/--previous 看历史执行。"""
     client = AgentClient()
-    envelope, code = client.get(f"/workflow/{workflow_id}")
+    attempt_no = resolve_attempt_no(client, workflow_id, attempt, previous)
+    if attempt_no is None:
+        envelope, code = client.get(f"/workflow/{workflow_id}")
+        if not envelope["ok"] or is_json():
+            print_result(envelope, code)
+        workflow = envelope["data"]
+        run = workflow.get("current_attempt") or {}
+        current = run.get("attempt_no")
+    else:
+        envelope, code = client.get(f"/workflow/{workflow_id}/attempts/{attempt_no}")
+        if not envelope["ok"] or is_json():
+            print_result(envelope, code)
+        run = envelope["data"]
+        workflow = fetch_workflow(client, workflow_id)
+        current = (workflow.get("current_attempt") or {}).get("attempt_no")
 
+    # 需介入时 summary 标黄承载警示，警示用颜色不用重复文字；needs_action 布尔仍在
+    # JSON 直出，供脚本 filter/告警。
+    summary = run.get("status_summary")
+    if summary and run.get("needs_action"):
+        summary = f"[yellow]{summary}[/yellow]"
+    run_no = run.get("attempt_no")
+    items: list[tuple[str, object]] = [
+        ("workflow_id", workflow.get("workflow_id")),
+        # 序号连续、当前执行永远最大，当前序号即总次数；两数相等就是在看当前执行。
+        ("attempt_no", f"{run_no}（共 {current} 次）"),
+        # 分析轴状态(server 派生的 analysis_status,含 queued)
+        ("status", run.get("analysis_status")),
+        ("summary", summary),
+        ("progress", f"{run.get('progress_percent', 0):.1f}%"),
+        ("pipeline", workflow.get("pipeline_name")),
+        # env 为空表示内部流程,不向 LIMS 推送进度
+        ("env", workflow.get("env") or "internal"),
+        ("launch_dir", workflow.get("launch_dir")),
+    ]
+    storage = workflow.get("launch_dir_state") or {}
+    unusual = storage.get("storage_state") not in (None, "materialized", "unknown")
+    if run_no == current and (unusual or storage.get("operation_kind")):
+        # 目录状态解释"为什么还在排队"（如等待恢复）；常态（含 4.x 迁来的 unknown）
+        # 不占行，历史执行也不显示当下的目录状态。
+        text = str(storage.get("storage_state"))
+        if storage.get("operation_kind"):
+            text += f"（{storage['operation_kind']}:{storage.get('operation_status')}）"
+        items.append(("storage", text))
+    items.extend([("run_name", run.get("run_name")), ("job_id", run.get("job_id"))])
+    for key in ("project_sn", "data_number", "data_path"):
+        if workflow.get(key):
+            items.append((key, workflow[key]))
+    # error 行只在分析失败态显示:cancelled 的原因已在 summary、succeeded 不应有错。
+    if run.get("analysis_status") == "failed":
+        error = (
+            run.get("error_summary")
+            or run.get("error_message")
+            or run.get("failure_message")
+        )
+        if error:
+            items.append(("error", error))
+        if run.get("failure_code"):
+            items.append(("failure_code", run["failure_code"]))
+    if run.get("duration"):
+        items.append(("duration", f"{run['duration'] / 1000:.0f}s"))
+    for key in ("start_time", "complete_time", "withdrawn_at"):
+        if run.get(key):
+            items.append((key, format_local_time(run[key])))
+    if workflow.get("created_at"):
+        items.append(("created_at", format_local_time(workflow["created_at"])))
+    if run.get("updated_at"):
+        items.append(("updated_at", format_local_time(run["updated_at"])))
+
+    print_kv(f"Workflow {label(workflow_id, run_no)}", items)
+
+
+def attempts(
+    workflow_id: str = typer.Argument(help="Workflow ID"),
+    n: int = typer.Option(20, "-n", help="每页条数"),
+    page: int = typer.Option(1, "--page", help="页码"),
+) -> None:
+    """执行历史（新的在前）；用 status --attempt N 看某次详情。"""
+    client = AgentClient()
+    envelope, code = client.get(
+        f"/workflow/{workflow_id}/attempts", page=page, page_size=n
+    )
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
 
-    d = envelope["data"]
-    # 需介入时 summary 标黄承载警示。存储问题在 launch-dir 资源中查看。
-    # 单列 needs_action 行只会重复 summary,故不显示,警示用颜色不用重复文字。
-    # needs_action 布尔仍在 JSON 直出,供脚本 filter/告警。
-    summary = d.get("status_summary")
-    if summary and d.get("needs_action"):
-        summary = f"[yellow]{summary}[/yellow]"
-    items = [
-        ("workflow_id", d.get("workflow_id")),
-        # 分析轴状态(server 派生的 analysis_status,含 queued)
-        ("status", d.get("analysis_status")),
-        ("summary", summary),
-        ("progress", f"{d.get('progress_percent', 0):.1f}%"),
-        ("pipeline", d.get("pipeline_name")),
-        # env 为空表示内部流程,不向 LIMS 推送进度
-        ("env", d.get("env") or "internal"),
-        ("launch_dir", d.get("launch_dir")),
-        ("run_name", d.get("run_name")),
-        ("job_id", d.get("job_id")),
-    ]
-    if d.get("project_sn"):
-        items.append(("project_sn", d["project_sn"]))
-    if d.get("data_number"):
-        items.append(("data_number", d["data_number"]))
-    if d.get("data_path"):
-        items.append(("data_path", d["data_path"]))
-    # error 行只在分析失败态显示:cancelled 的原因已在
-    # summary、succeeded 应无错(残留 error_message 属 server bug),都不露
-    # error 行,避免"succeeded + error"自相矛盾;也防御存量残留。
-    is_failed = d.get("analysis_status") == "failed"
-    if d.get("error_message") and is_failed:
-        items.append(("error", d["error_message"]))
-    if d.get("duration"):
-        items.append(("duration", f"{d['duration'] / 1000:.0f}s"))
-    if d.get("start_time"):
-        items.append(("start_time", format_local_time(d["start_time"])))
-    if d.get("complete_time"):
-        items.append(("complete_time", format_local_time(d["complete_time"])))
-    if d.get("created_at"):
-        items.append(("created_at", format_local_time(d["created_at"])))
-    if d.get("updated_at"):
-        items.append(("updated_at", format_local_time(d["updated_at"])))
-
-    print_kv(f"Workflow {workflow_id}", items)
+    data = envelope["data"]
+    rows = data.get("attempts", [])
+    for row in rows:
+        row["progress_percent"] = f"{row.get('progress_percent', 0):.0f}%"
+        for key in ("created_at", "finished_at"):
+            row[key] = format_local_time(row.get(key))
+        # 失败时 summary 只有一句通用提示，原因码更有信息量。
+        failed = row.get("analysis_status") == "failed" and row.get("failure_code")
+        row["note"] = row["failure_code"] if failed else row.get("status_summary")
+    print_table(
+        f"Attempts ({workflow_id})",
+        [
+            ("attempt_no", "Attempt"),
+            ("analysis_status", "Status"),
+            ("progress_percent", "Progress"),
+            ("run_name", "RunName"),
+            ("job_id", "Job"),
+            ("created_at", "Created"),
+            ("finished_at", "Finished"),
+            ("note", "Note"),
+        ],
+        rows,
+        total=data.get("total"),
+    )
 
 
 def tasks(
@@ -376,11 +450,14 @@ def tasks(
     page: int = typer.Option(1, "--page", help="页码"),
     sort_by: str = typer.Option("task_id", "--sort", help="排序字段"),
     sort_order: str = typer.Option("asc", "--sort-order", help="排序方向 (asc/desc)"),
+    attempt: int | None = attempt_option(),
+    previous: bool = previous_option(),
 ) -> None:
-    """子任务列表"""
+    """子任务列表（默认当前执行）"""
     client = AgentClient()
     envelope, code = client.get(
         f"/workflow/{workflow_id}/tasks",
+        attempt_no=resolve_attempt_no(client, workflow_id, attempt, previous),
         status=status_filter,
         process=process,
         page_size=n,
@@ -401,7 +478,7 @@ def tasks(
                 t["hash"] = f"{hex_only[:2]}/{hex_only[2:8]}"
 
     print_table(
-        f"Tasks ({workflow_id})",
+        f"Tasks ({label(workflow_id, data.get('attempt_no'))})",
         [
             ("task_id", "ID"),
             ("hash", "Hash"),
@@ -421,11 +498,14 @@ def log(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     tail: int = typer.Option(100, "--tail", "-n", help="显示最后 N 行"),
     grep: str | None = typer.Option(None, "--grep", "-g", help="过滤关键词"),
+    attempt: int | None = attempt_option(),
+    previous: bool = previous_option(),
 ) -> None:
-    """查看 Nextflow 日志"""
+    """查看 Nextflow 日志（按 runName 找到该次执行对应的日志文件）"""
     client = AgentClient()
     envelope, code = client.get(
         f"/workflow/{workflow_id}/log",
+        attempt_no=resolve_attempt_no(client, workflow_id, attempt, previous),
         tail=tail,
         grep=grep,
     )
@@ -434,23 +514,33 @@ def log(
         print_result(envelope, code)
 
     data = envelope["data"]
+    # 文件名走 stderr：stdout 只有日志行，便于继续管道处理。
+    err_console.print(
+        f"[dim]{escape(label(workflow_id, data.get('attempt_no')))}: "
+        f"{escape(str(data.get('log_file')))}[/dim]"
+    )
     for line in data.get("lines", []):
         typer.echo(line)
 
 
 def progress(
     workflow_id: str = typer.Argument(help="Workflow ID"),
+    attempt: int | None = attempt_option(),
+    previous: bool = previous_option(),
 ) -> None:
-    """分析进度（含 process 级别明细）"""
+    """分析进度（含 process 级别明细，默认当前执行）"""
     client = AgentClient()
-    envelope, code = client.get(f"/workflow/{workflow_id}/progress")
+    envelope, code = client.get(
+        f"/workflow/{workflow_id}/progress",
+        attempt_no=resolve_attempt_no(client, workflow_id, attempt, previous),
+    )
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
 
     d = envelope["data"]
     print_kv(
-        f"Progress ({workflow_id})",
+        f"Progress ({label(workflow_id, d.get('attempt_no'))})",
         [("progress_percent", f"{d.get('progress_percent', 0):.1f}%")],
     )
 
@@ -477,11 +567,14 @@ def resources(
         "--exclude-cached",
         help="排除 Nextflow 缓存复用的 task（默认聚合含其历史指标）",
     ),
+    attempt: int | None = attempt_option(),
+    previous: bool = previous_option(),
 ) -> None:
-    """资源使用统计"""
+    """资源使用统计（默认当前执行）"""
     client = AgentClient()
     envelope, code = client.get(
         f"/workflow/{workflow_id}/resource-stats",
+        attempt_no=resolve_attempt_no(client, workflow_id, attempt, previous),
         exclude_cached=exclude_cached,
     )
 
@@ -490,7 +583,7 @@ def resources(
 
     d = envelope["data"]
     print_kv(
-        f"资源统计 ({workflow_id})",
+        f"资源统计 ({label(workflow_id, d.get('attempt_no'))})",
         [
             ("task_count", d.get("task_count", 0)),
             ("cpu_efficiency", f"{d.get('cpu_efficiency', 0):.1f}%"),
@@ -509,10 +602,15 @@ def resources(
 def task_detail(
     workflow_id: str = typer.Argument(help="Workflow ID"),
     task_id: int = typer.Argument(help="Task ID"),
+    attempt: int | None = attempt_option(),
+    previous: bool = previous_option(),
 ) -> None:
-    """子任务详情"""
+    """子任务详情（默认当前执行）"""
     client = AgentClient()
-    envelope, code = client.get(f"/workflow/{workflow_id}/tasks/{task_id}")
+    envelope, code = client.get(
+        f"/workflow/{workflow_id}/tasks/{task_id}",
+        attempt_no=resolve_attempt_no(client, workflow_id, attempt, previous),
+    )
 
     if not envelope["ok"] or is_json():
         print_result(envelope, code)
@@ -521,6 +619,7 @@ def task_detail(
     items = [
         ("task_id", d.get("task_id")),
         ("workflow_id", d.get("workflow_id")),
+        ("attempt_no", d.get("attempt_no")),
         ("process", d.get("process")),
         ("name", d.get("name")),
         ("status", d.get("status")),
@@ -542,7 +641,7 @@ def task_detail(
     if d.get("error_action"):
         items.append(("error_action", d["error_action"]))
 
-    print_kv(f"Task {task_id} ({workflow_id})", items)
+    print_kv(f"Task {task_id} ({label(workflow_id, d.get('attempt_no'))})", items)
 
 
 def _fmt_bytes(n: int) -> str:

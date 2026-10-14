@@ -43,7 +43,8 @@ profile > 系统当前 profile。显式指定 profile 时仍是用户同名配�
 
 ## 两类资源
 
-- Workflow：一次 Nextflow 分析，由 `workflow_id` 标识。
+- Workflow：一次分析，由 `workflow_id` 标识。每次 submit/resume 是它的一次执行，
+  用 `attempt_no`（1、2、3…）区分；列表和详情默认展示当前执行，即最大的那个序号。
 - LaunchDir：物理启动目录及其存储生命周期，由规范化绝对路径标识。
 
 分析状态只出现在 Workflow；归档、迁移和 restore 状态只出现在 LaunchDir。不要用某个 Workflow ID 代表目录存储状态。
@@ -57,12 +58,18 @@ nfctl list --pipeline WGS --env prod
 nfctl list --project-sn P2026001
 nfctl list --launch-dir .              # 该目录的 Workflow 历史
 nfctl status <workflow_id>
+nfctl attempts <workflow_id>           # 执行历史，新的在前
 nfctl progress <workflow_id>
 nfctl tasks <workflow_id> --status failed
 nfctl task <workflow_id> <task_id>
 nfctl log <workflow_id> --grep ERROR
 nfctl resources <workflow_id> --exclude-cached
 ```
+
+`status`、`progress`、`tasks`、`task`、`log`、`resources` 默认看当前执行；
+`--attempt N` 看第 N 次，`--previous` 看上一次。标题里的 `wf-001#2` 表示第 2 次执行。
+`log` 按该次执行的 runName 找到对应的 `.nextflow.log*`，文件名打印在 stderr；
+日志被 Nextflow 轮转删除后返回 `LOG_NOT_FOUND`。
 
 按目录盘点：
 
@@ -86,12 +93,20 @@ nfctl submit . -p <pipeline> -S <project_sn> [--env prod]
 nfctl submit <launch_dir> -p <pipeline> -S <project_sn> --dry-run
 nfctl resume <workflow_id>
 nfctl cancel <workflow_id> [--reason 原因]
+nfctl withdraw <workflow_id> --reason 原因
 nfctl delete <workflow_id>
 ```
 
 相对 launch_dir 会先按 nfctl 调用者的当前目录转换为绝对路径，因此可以在启动目录内直接使用 `submit .`。submit 会从 `run.sh` 读取 `TOWER_WORKFLOW_ID` 并校验请求一致。受理成功后服务端立即记录 `progress=1`，由 reconciler 异步启动。手动 qsub 只有在 Workflow 已通过 submit 登记时才能被 trace 接管。
 
-`cancel` 只取消分析，不取消目录存储操作。
+- `resume`：新建一次执行，支持 failed/cancelled 和已撤销的成功；已归档目录会先自动恢复再投递。
+- `cancel`：只取消运行中的分析，先进入 `stopping`，调度任务确认退出后变为 `cancelled`；不取消目录存储操作。
+- `withdraw`：撤销成功结果，LIMS 会收到 error；之后才能 resume 重跑。
+- `delete`：删除分析及全部执行历史，不动目录文件；有过成功执行的分析不能删除。
+
+控制命令针对当前执行，并把它的序号作为 `expected_attempt_no` 发给服务端；
+期间若有人 resume 出了新的执行，服务端返回 `ATTEMPT_CHANGED` 和 `current_attempt_no`，
+刷新状态后再决定。`--attempt N` 可以钉住自己看到的那次执行。
 
 ## 存储控制
 
@@ -106,7 +121,8 @@ nfctl archive cancel . --reason maintenance
 ```
 
 - `start`：立即发起 archive，不以 workflow_id 定位。
-- `restore`：已有一级非隐藏目录时拒绝覆盖；`--wait` 按 operation_id 等待终态。
+- `restore`：不覆盖已有数据。归档里的目录都已在原位时直接视为已恢复；只有一部分在时失败，
+  需人工核对。`--wait` 按 operation_id 等待终态。
 - `resume`：重试最近一次 failed/cancelled migrate/archive/restore。
 - `cancel`：关闭自动归档并请求取消活跃 job；operation 在 scheduler 确认退出前保持 `cancelling`。
 
@@ -137,8 +153,8 @@ JSON 使用统一信封：
 {"ok": false, "error": {"type": "LAUNCH_DIR_BUSY", "message": "...", "hint": "..."}}
 ```
 
-服务端的结构化错误上下文会保留在 `error` 中。例如 restore 冲突会返回
-`error.conflicts`，存储任务冲突会返回 `error.operation_id` / `error.job_id`。
+服务端的结构化错误上下文会保留在 `error` 中。例如执行已变化会返回
+`error.current_attempt_no`，存储任务冲突会返回 `error.operation_id` / `error.job_id`。
 
 全局选项写在子命令前。`--format json` 自动跳过交互确认。
 
