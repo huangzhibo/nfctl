@@ -93,20 +93,17 @@ nfctl submit . -p <pipeline> -S <project_sn> [--env prod]
 nfctl submit <launch_dir> -p <pipeline> -S <project_sn> --dry-run
 nfctl resume <workflow_id>
 nfctl cancel <workflow_id> [--reason 原因]
-nfctl withdraw <workflow_id> --reason 原因
 nfctl delete <workflow_id>
 ```
 
 相对 launch_dir 会先按 nfctl 调用者的当前目录转换为绝对路径，因此可以在启动目录内直接使用 `submit .`。submit 会从 `run.sh` 读取 `TOWER_WORKFLOW_ID` 并校验请求一致。受理成功后服务端立即记录 `progress=1`，由 reconciler 异步启动。手动 qsub 只有在 Workflow 已通过 submit 登记时才能被 trace 接管。
 
-- `resume`：新建一次执行，支持 failed/cancelled 和已撤销的成功；已归档目录会先自动恢复再投递。
-- `cancel`：只取消运行中的分析，先进入 `stopping`，调度任务确认退出后变为 `cancelled`；不取消目录存储操作。
-- `withdraw`：撤销成功结果，LIMS 会收到 error；之后才能 resume 重跑。
-- `delete`：删除分析及全部执行历史，不动目录文件；有过成功执行的分析不能删除。
+控制命令只作用于当前执行：
 
-控制命令针对当前执行，并把它的序号作为 `expected_attempt_no` 发给服务端；
-期间若有人 resume 出了新的执行，服务端返回 `ATTEMPT_CHANGED` 和 `current_attempt_no`，
-刷新状态后再决定。`--attempt N` 可以钉住自己看到的那次执行。
+- `cancel`：运行中则停止，先进入 `stopping`，调度任务确认退出后变为 `cancelled`；已成功则作废结果。
+  LIMS 都会收到 error。不取消目录存储操作。
+- `resume`：新建一次执行，支持 failed/cancelled（含作废的成功结果）；已归档目录会先自动恢复再投递。
+- `delete`：删除分析及全部执行历史，不动目录文件；有效的成功结果要先 cancel 作废。
 
 ## 存储控制
 

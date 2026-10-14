@@ -1410,11 +1410,10 @@ class TestSubmitProjectSn:
 class TestDelete:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_delete_sends_current_attempt_as_expected(self, mock_client_class):
-        """先读当前执行序号，DELETE 带 expected_attempt_no；成功守卫在 server。"""
+    def test_delete_sends_single_request(self, mock_client_class):
+        """控制命令只作用于当前执行，不先读序号；成功结果的守卫在 server。"""
         mock_client = _mock_client(
             mock_client_class,
-            _mock_response(200, _detail(attempt_no=2, workflow_id="wf-bad")),
             _mock_response(200, {"workflow_id": "wf-bad", "deleted": True}),
         )
 
@@ -1422,40 +1421,35 @@ class TestDelete:
 
         assert result.exit_code == 0
         assert json.loads(result.output)["data"]["deleted"] is True
+        assert mock_client.request.call_count == 1
         call = mock_client.request.call_args
         assert call.args == ("DELETE", "/workflow/wf-bad")
-        assert call.kwargs["params"] == {"expected_attempt_no": 2}
+        assert call.kwargs["params"] == {}
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_delete_rejected_by_server_passes_through(self, mock_client_class):
-        mock_client = _mock_client(
+        _mock_client(
             mock_client_class,
             _mock_response(
                 409,
                 {
-                    "detail": "存在历史成功证据，不可删除分析历史",
+                    "detail": "存在有效的成功结果，先 cancel 作废后才能删除",
                     "error_code": "DELETE_REJECTED",
                     "resource_id": "wf-ok",
                 },
             ),
         )
 
-        result = runner.invoke(
-            app, ["--format", "json", "delete", "wf-ok", "--attempt", "1"]
-        )
+        result = runner.invoke(app, ["--format", "json", "delete", "wf-ok"])
 
         assert result.exit_code == 5
-        data = json.loads(result.output)
-        assert data["error"]["type"] == "DELETE_REJECTED"
-        # 显式 --attempt 时不预查，唯一请求就是 DELETE
-        assert mock_client.request.call_count == 1
+        assert json.loads(result.output)["error"]["type"] == "DELETE_REJECTED"
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
     def test_delete_404_passes_through(self, mock_client_class):
-        """不存在的分析：读当前执行时 404 直接透传。"""
-        mock_client = _mock_client(
+        _mock_client(
             mock_client_class,
             _mock_response(
                 404,
@@ -1466,9 +1460,7 @@ class TestDelete:
         result = runner.invoke(app, ["--format", "json", "delete", "wf-missing"])
 
         assert result.exit_code == 2
-        data = json.loads(result.output)
-        assert data["error"]["type"] == "WORKFLOW_NOT_FOUND"
-        assert mock_client.request.call_count == 1
+        assert json.loads(result.output)["error"]["type"] == "WORKFLOW_NOT_FOUND"
 
 
 class TestListProjectSn:
@@ -1760,17 +1752,18 @@ class TestStructuredError:
 
 class TestCancel:
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("main_status", "shown"),
+        [("stopping", "Stopping: wf-001#3"), ("cancelled", "Cancelled: wf-001#3")],
+    )
     @patch("nfctl.client.httpx.Client")
-    def test_cancel_sends_expected_attempt_without_storage_scope(
-        self, mock_client_class
-    ):
-        """Workflow cancel 只取消当前执行，不再复用 scope 路由存储操作。"""
+    def test_cancel_sends_reason_only(self, mock_client_class, main_status, shown):
+        """运行中则停止、已成功则作废，由 server 判断；CLI 只发一次请求。"""
         mock_client = _mock_client(
             mock_client_class,
-            _mock_response(200, _detail(attempt_no=3)),
             _mock_response(
                 202,
-                {"workflow_id": "wf-001", "attempt_no": 3, "main_status": "stopping"},
+                {"workflow_id": "wf-001", "attempt_no": 3, "main_status": main_status},
             ),
         )
 
@@ -1779,43 +1772,27 @@ class TestCancel:
         )
 
         assert result.exit_code == 0
+        assert mock_client.request.call_count == 1
         call = mock_client.request.call_args
         assert call.args == ("POST", "/workflow/wf-001/cancel")
-        assert call.kwargs["json"] == {"expected_attempt_no": 3, "reason": "升级"}
-        assert "wf-001#3" in result.output
+        assert call.kwargs["json"] == {"reason": "升级"}
+        assert shown in result.output
 
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_attempt_changed_shows_current_attempt(self, mock_client_class):
-        """钉住的执行已不是当前那次：透传 409 和 current_attempt_no。"""
-        mock_client = _mock_client(
-            mock_client_class,
-            _mock_response(
-                409,
-                {
-                    "detail": "当前执行已变为第 4 次，请刷新后重试",
-                    "error_code": "ATTEMPT_CHANGED",
-                    "resource_id": "wf-001",
-                    "current_attempt_no": 4,
-                },
-            ),
-        )
+    def test_cancel_abort_sends_nothing(self, mock_client_class):
+        result = runner.invoke(app, ["cancel", "wf-001"], input="n\n")
 
-        result = runner.invoke(app, ["-q", "cancel", "wf-001", "--attempt", "3"])
-
-        assert result.exit_code == 5
-        assert mock_client.request.call_count == 1
-        assert "ATTEMPT_CHANGED" in result.stderr
-        assert "current_attempt_no: 4" in result.stderr
+        assert result.exit_code == 1
+        mock_client_class.assert_not_called()
 
 
 class TestResume:
     @pytest.mark.unit
     @patch("nfctl.client.httpx.Client")
-    def test_resume_sends_expected_attempt(self, mock_client_class):
+    def test_resume_sends_no_body(self, mock_client_class):
         mock_client = _mock_client(
             mock_client_class,
-            _mock_response(200, _detail(attempt_no=1, analysis_status="failed")),
             _mock_response(
                 202,
                 {"workflow_id": "wf-001", "attempt_no": 2, "main_status": "running"},
@@ -1825,60 +1802,18 @@ class TestResume:
         result = runner.invoke(app, ["resume", "wf-001"])
 
         assert result.exit_code == 0
+        assert mock_client.request.call_count == 1
         call = mock_client.request.call_args
         assert call.args == ("POST", "/workflow/wf-001/resume")
-        assert call.kwargs["json"] == {"expected_attempt_no": 1}
+        assert call.kwargs["json"] is None
         assert "Resumed: wf-001#2" in result.output
 
-
-class TestWithdraw:
     @pytest.mark.unit
-    @patch("nfctl.client.httpx.Client")
-    def test_withdraw_targets_current_attempt(self, mock_client_class):
-        mock_client = _mock_client(
-            mock_client_class,
-            _mock_response(200, _detail(attempt_no=2, analysis_status="succeeded")),
-            _mock_response(
-                200,
-                {
-                    "workflow_id": "wf-001",
-                    "attempt_no": 2,
-                    "main_status": "succeeded",
-                    "withdrawn_at": "2026-10-14T10:00:00+00:00",
-                    "withdrawal_reason": "样本错误",
-                },
-            ),
-        )
-
-        result = runner.invoke(app, ["-q", "withdraw", "wf-001", "-r", "样本错误"])
-
-        assert result.exit_code == 0
-        call = mock_client.request.call_args
-        assert call.args == ("POST", "/workflow/wf-001/attempts/2/withdraw")
-        assert call.kwargs["json"] == {"reason": "样本错误"}
-        assert "Withdrawn: wf-001#2" in result.output
-
-    @pytest.mark.unit
-    @patch("nfctl.client.httpx.Client")
-    def test_withdraw_requires_reason(self, mock_client_class):
-        result = runner.invoke(app, ["withdraw", "wf-001"])
+    def test_withdraw_command_is_removed(self):
+        result = runner.invoke(app, ["withdraw", "wf-001", "-r", "x"])
 
         assert result.exit_code == 2
-        mock_client_class.assert_not_called()
-
-    @pytest.mark.unit
-    @patch("nfctl.client.httpx.Client")
-    def test_withdraw_abort_sends_nothing(self, mock_client_class):
-        mock_client = _mock_client(
-            mock_client_class, _mock_response(200, _detail(attempt_no=1))
-        )
-
-        result = runner.invoke(
-            app, ["withdraw", "wf-001", "-r", "样本错误"], input="n\n"
-        )
-
-        assert result.exit_code == 1
-        assert mock_client.request.call_count == 1  # 只读了当前执行
+        assert "No such command" in result.output
 
 
 class TestCancelOptions:
