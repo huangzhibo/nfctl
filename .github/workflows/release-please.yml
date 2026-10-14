@@ -30,6 +30,34 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # python release-type 只改 pyproject.toml 的 version，不同步 uv.lock 里 nfctl
+      # 自身条目的版本；漂移后本地 `uv sync` 会改写 lock，留下一处未提交的改动。
+      # 在 release PR 分支上跑一次 `uv lock` 对齐后推回 PR（与 nf-server 一致）。
+      - name: Checkout release PR branch
+        if: steps.release.outputs.pr
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+
+      - name: Install uv
+        if: steps.release.outputs.pr
+        uses: astral-sh/setup-uv@v4
+
+      - name: Sync uv.lock with bumped version
+        if: steps.release.outputs.pr
+        run: uv lock
+
+      - name: Commit uv.lock if changed
+        if: steps.release.outputs.pr
+        run: |
+          if [[ -n "$(git status --porcelain uv.lock)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add uv.lock
+            git commit -m "chore: sync uv.lock with bumped version"
+            git push
+          fi
+
   publish:
     needs: release-please
     if: |
