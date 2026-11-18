@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/huangzhibo/nfctl/compare/v3.1.0...v3.2.0) (2026-11-18)
+
+
+### 新功能
+
+* **submit:** add execution mode selection ([855de02](https://github.com/huangzhibo/nfctl/commit/855de02fedf0acf44f3d763a393935631731bd18))
+
 ## [3.1.0](https://github.com/huangzhibo/nfctl/compare/v3.0.0...v3.1.0) (2026-10-14)
 
 
