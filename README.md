@@ -91,12 +91,15 @@ nfctl list --group-by launch-dir --archive-due --all
 nfctl submit <launch_dir> -p <pipeline> -S <project_sn> [--env prod]
 nfctl submit . -p <pipeline> -S <project_sn> [--env prod]
 nfctl submit <launch_dir> -p <pipeline> -S <project_sn> --dry-run
+nfctl submit <launch_dir> -p <pipeline> -S <project_sn> --execution-mode slurm
 nfctl resume <workflow_id>
 nfctl cancel <workflow_id> [--reason 原因]
 nfctl delete <workflow_id>
 ```
 
 相对 launch_dir 会先按 nfctl 调用者的当前目录转换为绝对路径，因此可以在启动目录内直接使用 `submit .`。submit 会从 `run.sh` 读取 `TOWER_WORKFLOW_ID` 并校验请求一致。受理成功后服务端立即记录 `progress=1`，由 reconciler 异步启动。手动 qsub 只有在 Workflow 已通过 submit 登记时才能被 trace 接管。
+
+`--execution-mode` 可选 `sge`、`slurm` 或 `local`，由服务端校验该后端是否已启用。省略时沿用服务端默认值。`run.sh` 的 Nextflow profile 也需要选择同一调度器。
 
 控制命令只作用于当前执行：
 

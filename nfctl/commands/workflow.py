@@ -5,6 +5,7 @@
 """
 
 import sys
+from enum import StrEnum
 
 import typer
 
@@ -14,13 +15,23 @@ from nfctl.output import confirm, console, is_json, print_kv, print_result
 from nfctl.paths import normalize_launch_dir
 
 
+class ExecutionMode(StrEnum):
+    SGE = "sge"
+    SLURM = "slurm"
+    LOCAL = "local"
+
+
 def _do_validate(
-    client: AgentClient, pipeline: str, launch_dir: str
+    client: AgentClient,
+    pipeline: str,
+    launch_dir: str,
+    execution_mode: ExecutionMode | None = None,
 ) -> tuple[dict, str]:
     """执行 validate 并返回 (val_data, workflow_id)，失败时直接退出"""
-    val_envelope, val_code = client.post(
-        "/workflow/validate", json={"pipeline_name": pipeline, "launch_dir": launch_dir}
-    )
+    body = {"pipeline_name": pipeline, "launch_dir": launch_dir}
+    if execution_mode is not None:
+        body["execution_mode"] = execution_mode.value
+    val_envelope, val_code = client.post("/workflow/validate", json=body)
     if not val_envelope["ok"]:
         print_result(val_envelope, val_code)
 
@@ -37,6 +48,16 @@ def _do_validate(
         )
         print_result(
             _error("VALIDATION_ERROR", failed),
+            EXIT_VALIDATION,
+        )
+
+    if execution_mode is not None and val_data.get("execution_mode") != execution_mode:
+        print_result(
+            _error(
+                "EXECUTION_MODE_UNCONFIRMED",
+                f"服务端未确认执行后端 {execution_mode.value}",
+                hint="请选择支持 --execution-mode 的 nf-server 实例",
+            ),
             EXIT_VALIDATION,
         )
 
@@ -65,12 +86,15 @@ def submit(
         ..., "--project-sn", "-S", help="项目编号 (LIMS project_sn)"
     ),
     env: str | None = typer.Option(None, "--env", "-e", help="环境 (test/gray/prod)"),
+    execution_mode: ExecutionMode | None = typer.Option(
+        None, "--execution-mode", help="执行后端，省略时使用服务端默认值"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="仅验证，不实际投递"),
 ) -> None:
     """提交分析"""
     launch_dir = normalize_launch_dir(launch_dir)
     client = AgentClient()
-    val_data, workflow_id = _do_validate(client, pipeline, launch_dir)
+    val_data, workflow_id = _do_validate(client, pipeline, launch_dir, execution_mode)
 
     if dry_run:
         if is_json():
@@ -81,6 +105,8 @@ def submit(
             ("workflow_id", workflow_id),
             ("project_sn", project_sn),
         ]
+        if val_data.get("execution_mode"):
+            items.append(("execution_mode", val_data["execution_mode"]))
         for name, check in checks.items():
             passed = check.get("passed", False)
             detail = check.get("detail", "")
@@ -97,6 +123,8 @@ def submit(
     }
     if env:
         body["env"] = env
+    if execution_mode is not None:
+        body["execution_mode"] = execution_mode.value
 
     envelope, code = client.post("/workflow/submit", json=body)
 

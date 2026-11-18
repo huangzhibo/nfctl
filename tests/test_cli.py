@@ -1404,6 +1404,54 @@ class TestSubmitProjectSn:
         assert result.exit_code == 2
         assert "project" in result.output.lower()
 
+    @pytest.mark.unit
+    @pytest.mark.parametrize("server_mode", ["slurm", None])
+    @patch("nfctl.client.httpx.Client")
+    def test_submit_requires_server_to_confirm_execution_mode(
+        self, mock_client_class, server_mode
+    ):
+        client = mock_client_class.return_value.__enter__.return_value
+        validation = {"can_submit": True, "workflow_id": "wf-slurm", "checks": {}}
+        if server_mode is not None:
+            validation["execution_mode"] = server_mode
+        client.request.side_effect = [
+            _mock_response(200, validation),
+            _mock_response(202, {"workflow_id": "wf-slurm", "execution_mode": "slurm"}),
+        ]
+
+        result = runner.invoke(
+            app,
+            [
+                "--format",
+                "json",
+                "submit",
+                "/data/sample1",
+                "-p",
+                "WGS",
+                "-S",
+                "SN-001",
+                "--execution-mode",
+                "slurm",
+            ],
+        )
+
+        assert (
+            client.request.call_args_list[0].kwargs["json"]["execution_mode"] == "slurm"
+        )
+        if server_mode is None:
+            assert result.exit_code != 0
+            assert (
+                json.loads(result.output)["error"]["type"]
+                == "EXECUTION_MODE_UNCONFIRMED"
+            )
+            assert client.request.call_count == 1
+        else:
+            assert result.exit_code == 0
+            assert (
+                client.request.call_args_list[1].kwargs["json"]["execution_mode"]
+                == "slurm"
+            )
+
 
 class TestDelete:
     @pytest.mark.unit
